@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +24,37 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  const voiceConfigReady = Boolean(
+    process.env.LIVEKIT_URL &&
+    process.env.LIVEKIT_API_KEY &&
+    process.env.LIVEKIT_API_SECRET &&
+    process.env.GOOGLE_API_KEY,
+  );
+
+  if (!voiceConfigReady) {
+    logger.info(
+      "Sensei voice worker is waiting for LiveKit and Gemini credentials",
+    );
+    return;
+  }
+
+  const workerPath = fileURLToPath(new URL("./senseiAgent.mjs", import.meta.url));
+  const worker = spawn(process.execPath, [workerPath], {
+    env: process.env,
+    stdio: "ignore",
+  });
+
+  worker.once("spawn", () => {
+    logger.info("Sensei LiveKit agent worker started");
+  });
+  worker.once("error", (workerError) => {
+    logger.error({ err: workerError }, "Sensei agent worker failed to start");
+  });
+  worker.once("exit", (code, signal) => {
+    logger.warn({ code, signal }, "Sensei agent worker exited");
+  });
+
+  process.once("SIGTERM", () => worker.kill("SIGTERM"));
+  process.once("SIGINT", () => worker.kill("SIGINT"));
 });

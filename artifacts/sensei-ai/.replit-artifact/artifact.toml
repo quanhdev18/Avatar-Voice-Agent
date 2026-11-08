@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Sensei AI"
+description = "A Japanese-learning classroom for Vietnamese speakers, starting with an AI teacher, bilingual live captions, and text fallback."
+version = "1.0.0"
+id = "artifacts/sensei-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25223
+
+[services.development]
+run = "pnpm --filter @workspace/sensei-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sensei-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/sensei-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25223"
+BASE_PATH = "/"

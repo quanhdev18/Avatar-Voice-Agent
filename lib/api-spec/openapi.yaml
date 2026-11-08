@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: sensei
+    description: Sensei AI classroom voice sessions
 paths:
   /healthz:
     get:
@@ -24,6 +26,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /sensei/voice-status:
+    get:
+      operationId: getVoiceStatus
+      tags: [sensei]
+      summary: Check voice classroom setup
+      description: Returns whether the protected LiveKit and Gemini voice service is configured
+      responses:
+        "200":
+          description: Voice setup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceStatus"
+  /sensei/sessions:
+    post:
+      operationId: startVoiceSession
+      tags: [sensei]
+      summary: Start a voice classroom session
+      description: Creates an authenticated session and returns a short-lived LiveKit participant token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartVoiceSessionInput"
+      responses:
+        "201":
+          description: Session and participant token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartedVoiceSession"
+        "401":
+          description: Sign-in required
+        "503":
+          description: Voice provider credentials are not configured
+  /sensei/sessions/{sessionId}/finish:
+    post:
+      operationId: finishVoiceSession
+      tags: [sensei]
+      summary: Save the completed voice session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinishVoiceSessionInput"
+      responses:
+        "200":
+          description: Saved session transcript and summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinishedVoiceSession"
+        "401":
+          description: Sign-in required
+        "404":
+          description: Session not found
 components:
   schemas:
     HealthStatus:
@@ -33,4 +100,100 @@ components:
           type: string
       required:
         - status
+    VoiceStatus:
+      type: object
+      properties:
+        available:
+          type: boolean
+        missingProviders:
+          type: array
+          items:
+            type: string
+            enum: [livekit, gemini]
+      required: [available, missingProviders]
+    StartVoiceSessionInput:
+      type: object
+      properties:
+        lessonId:
+          type: string
+          minLength: 1
+          maxLength: 80
+      required: [lessonId]
+    StartedVoiceSession:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        roomName:
+          type: string
+        livekitUrl:
+          type: string
+          format: uri
+        participantToken:
+          type: string
+        tokenExpiresAt:
+          type: string
+          format: date-time
+      required: [sessionId, roomName, livekitUrl, participantToken, tokenExpiresAt]
+    TranscriptEntry:
+      type: object
+      properties:
+        speaker:
+          type: string
+          enum: [teacher, learner]
+        text:
+          type: string
+          maxLength: 5000
+        language:
+          type: string
+          enum: [ja, vi, mixed]
+        elapsedMs:
+          type: integer
+          minimum: 0
+      required: [speaker, text, language, elapsedMs]
+    FinishVoiceSessionInput:
+      type: object
+      properties:
+        durationSeconds:
+          type: integer
+          minimum: 0
+          maximum: 3600
+        transcript:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptEntry"
+          maxItems: 1000
+        summary:
+          type: ["string", "null"]
+          maxLength: 5000
+        commonMistakes:
+          type: array
+          items:
+            type: string
+            maxLength: 500
+          maxItems: 50
+      required: [durationSeconds, transcript]
+    FinishedVoiceSession:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [completed]
+        durationSeconds:
+          type: integer
+        transcript:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptEntry"
+        summary:
+          type: ["string", "null"]
+        commonMistakes:
+          type: array
+          items:
+            type: string
+      required: [sessionId, status, durationSeconds, transcript, summary, commonMistakes]
 
