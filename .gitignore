@@ -53,3 +53,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# local env files
+.env
+.env.local

@@ -99,12 +99,14 @@
   --ring: 155 27% 66%;
 }
 
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: var(--app-font-sans); -webkit-font-smoothing: antialiased; }
-button, input, textarea { font: inherit; }
-button { cursor: pointer; }
-a { color: inherit; text-decoration: none; }
+@layer base {
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: var(--app-font-sans); -webkit-font-smoothing: antialiased; }
+  button, input, textarea { font: inherit; }
+  button { cursor: pointer; }
+  a { color: inherit; text-decoration: none; }
+}
 
 .serif { font-family: var(--app-font-serif); }
 .mono { font-family: var(--app-font-mono); }
@@ -154,3 +156,12 @@ a { color: inherit; text-decoration: none; }
   .auth-page { padding: 22px 18px; }.auth-top>span { font-size: 10px; }.auth-backdrop { width: 82vw; height: 82vw; top: 21%; right: -40vw; opacity: .7; }.auth-kanji { font-size: 120px; }.auth-content { margin: auto 0; padding: 42px 0; }.auth-content h1 { font-size: 39px; }.auth-bottom { font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+/* --- Classroom: Yuki portrait lip-sync + blink --- */
+@keyframes yuki-talk { 0%, 100% { ry: 0; } 25% { ry: 7; } 50% { ry: 3; } 75% { ry: 8; } }
+@keyframes yuki-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+.yuki-mouth-talk .yuki-mouth-open { animation: yuki-talk .32s ease-in-out infinite; }
+.yuki-eyes { transform-origin: 200px 178px; animation: yuki-blink 5s infinite; }
+.board-card { animation: board-in .35s ease-out both; }
+@keyframes board-in { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+ruby rt { user-select: none; }

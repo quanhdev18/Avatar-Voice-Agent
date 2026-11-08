@@ -17,6 +17,8 @@ export const senseiSessionsTable = pgTable("sensei_sessions", {
   lessonId: text("lesson_id").notNull(),
   roomName: text("room_name").notNull().unique(),
   status: text("status").notNull().default("active"),
+  mode: text("mode").$type<"voice" | "demo">().notNull().default("voice"),
+  avatarProvider: text("avatar_provider"),
   durationSeconds: integer("duration_seconds"),
   transcript: jsonb("transcript").$type<TranscriptEntry[]>().notNull().default([]),
   summary: text("summary"),

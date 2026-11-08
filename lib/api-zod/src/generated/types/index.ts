@@ -6,14 +6,35 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './dashboard';
+export * from './dialogueLine';
 export * from './finishedVoiceSession';
 export * from './finishedVoiceSessionStatus';
 export * from './finishVoiceSessionInput';
+export * from './grammarExample';
+export * from './grammarPoint';
 export * from './healthStatus';
+export * from './lessonDetail';
+export * from './lessonDetailStatus';
+export * from './lessonSummary';
+export * from './lessonSummaryStatus';
+export * from './listNotebookParams';
+export * from './notebookData';
+export * from './notebookItem';
+export * from './notebookItemInput';
+export * from './notebookItemInputType';
+export * from './notebookItemType';
+export * from './reviewInput';
+export * from './sessionDetail';
+export * from './sessionSummary';
 export * from './startedVoiceSession';
+export * from './startedVoiceSessionMode';
 export * from './startVoiceSessionInput';
+export * from './startVoiceSessionInputMode';
 export * from './transcriptEntry';
 export * from './transcriptEntryLanguage';
 export * from './transcriptEntrySpeaker';
+export * from './vocabEntry';
 export * from './voiceStatus';
+export * from './voiceStatusAuthMode';
 export * from './voiceStatusMissingProvidersItem';

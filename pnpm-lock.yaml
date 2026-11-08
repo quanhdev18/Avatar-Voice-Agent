@@ -183,10 +183,19 @@ importers:
         version: 4.44.1(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@livekit/agents':
         specifier: ^1.9.5
-        version: 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5)
+        version: 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76)
       '@livekit/agents-plugin-google':
         specifier: ^1.9.5
-        version: 1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5))(@livekit/rtc-node@1.2.1)(ws@8.22.1)(zod@4.6.5)
+        version: 1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76))(@livekit/rtc-node@1.2.1)(ws@8.22.1)(zod@3.25.76)
+      '@livekit/agents-plugin-liveavatar':
+        specifier: 1.9.5
+        version: 1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76))(@livekit/rtc-node@1.2.1)
+      '@livekit/agents-plugin-openai':
+        specifier: 1.9.5
+        version: 1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76))(@livekit/rtc-node@1.2.1)(zod@3.25.76)
+      '@livekit/protocol':
+        specifier: 1.51.0
+        version: 1.51.0
       '@livekit/rtc-node':
         specifier: ^1.2.1
         version: 1.2.1
@@ -220,6 +229,9 @@ importers:
       pino-http:
         specifier: ^10.5.0
         version: 10.5.0
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
     devDependencies:
       '@types/cookie-parser':
         specifier: ^1.4.10
@@ -1054,6 +1066,19 @@ packages:
     peerDependencies:
       '@livekit/agents': 1.9.5
       '@livekit/rtc-node': ^1.1.0
+
+  '@livekit/agents-plugin-liveavatar@1.9.5':
+    resolution: {integrity: sha512-FIiwbZZY5aJiwwSRXk0YSLrwxx1JRRkMkJhOhX+JUo+JeEyE3M/3hXF7HN0e0AUdhPZ4Xo73KceJlHZs0wJ9Fw==}
+    peerDependencies:
+      '@livekit/agents': 1.9.5
+      '@livekit/rtc-node': ^1.1.0
+
+  '@livekit/agents-plugin-openai@1.9.5':
+    resolution: {integrity: sha512-gFn3hf9YYEQmZG+EUyriZNPdR7a50saWfbrTzb7F4pXAv/RxgdcI1Cc0EebM8b7TA0+a98nQLm2IJqp1bwNs7Q==}
+    peerDependencies:
+      '@livekit/agents': 1.9.5
+      '@livekit/rtc-node': ^1.1.0
+      zod: ^3.25.76 || ^4.1.8
 
   '@livekit/agents@1.9.5':
     resolution: {integrity: sha512-Tza6Ks1PkEA+mUiKSNwMPOtWfqbeo/YdLV8pMAC/BSBNJRc4BWN68TOS8Iy5HhuCU0HcyVr57gPZQShE31+3cg==}
@@ -4445,16 +4470,16 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@livekit/agents-plugin-google@1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5))(@livekit/rtc-node@1.2.1)(ws@8.22.1)(zod@4.6.5)':
+  '@livekit/agents-plugin-google@1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76))(@livekit/rtc-node@1.2.1)(ws@8.22.1)(zod@3.25.76)':
     dependencies:
       '@google/genai': 2.32.0
-      '@livekit/agents': 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5)
+      '@livekit/agents': 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76)
       '@livekit/mutex': 1.1.1
       '@livekit/rtc-node': 1.2.1
       '@types/json-schema': 7.0.15
       google-auth-library: 10.9.1
       json-schema: 0.4.0
-      openai: 6.49.0(ws@8.22.1)(zod@4.6.5)
+      openai: 6.49.0(ws@8.22.1)(zod@3.25.76)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -4466,7 +4491,31 @@ snapshots:
       - ws
       - zod
 
-  '@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5)':
+  '@livekit/agents-plugin-liveavatar@1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76))(@livekit/rtc-node@1.2.1)':
+    dependencies:
+      '@livekit/agents': 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76)
+      '@livekit/rtc-node': 1.2.1
+      livekit-server-sdk: 2.19.2
+      ws: 8.22.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@livekit/agents-plugin-openai@1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76))(@livekit/rtc-node@1.2.1)(zod@3.25.76)':
+    dependencies:
+      '@livekit/agents': 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76)
+      '@livekit/rtc-node': 1.2.1
+      openai: 6.49.0(ws@8.22.1)(zod@3.25.76)
+      ws: 8.22.1
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-node'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - bufferutil
+      - utf-8-validate
+
+  '@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@bufbuild/protobuf': 1.10.1
       '@livekit/av': 10.1.0
@@ -4500,14 +4549,14 @@ snapshots:
       jsonrepair: 3.15.0
       livekit-server-sdk: 2.19.2
       ofetch: 1.5.1
-      openai: 6.49.0(ws@8.22.1)(zod@4.6.5)
+      openai: 6.49.0(ws@8.22.1)(zod@3.25.76)
       pidusage: 4.1.0
       pino: 8.21.0
       pino-pretty: 11.3.0
       sharp: 0.35.5(@types/node@25.9.9)
       ws: 8.22.1
-      zod: 4.6.5
-      zod-to-json-schema: 3.25.2(zod@4.6.5)
+      zod: 3.25.76
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -6700,10 +6749,10 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.49.0(ws@8.22.1)(zod@4.6.5):
+  openai@6.49.0(ws@8.22.1)(zod@3.25.76):
     optionalDependencies:
       ws: 8.22.1
-      zod: 4.6.5
+      zod: 3.25.76
 
   orval@8.41.0(@tanstack/react-query@5.104.1(react@19.1.0))(prettier@3.9.10)(swr@2.3.4(react@19.1.0))(typescript@5.9.3)(zod@4.6.5):
     dependencies:
@@ -7473,9 +7522,9 @@ snapshots:
 
   yoctocolors@2.2.0: {}
 
-  zod-to-json-schema@3.25.2(zod@4.6.5):
+  zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
-      zod: 4.6.5
+      zod: 3.25.76
 
   zod@3.25.76: {}
 

@@ -20,9 +20,18 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  Dashboard,
   FinishVoiceSessionInput,
   FinishedVoiceSession,
   HealthStatus,
+  LessonDetail,
+  LessonSummary,
+  ListNotebookParams,
+  NotebookItem,
+  NotebookItemInput,
+  ReviewInput,
+  SessionDetail,
+  SessionSummary,
   StartVoiceSessionInput,
   StartedVoiceSession,
   VoiceStatus
@@ -388,4 +397,650 @@ export const useFinishVoiceSession = <TError = ErrorType<void>,
       > => {
       return useMutation(getFinishVoiceSessionMutationOptions(options));
     }
+
+export const getGetDashboardUrl = () => {
+
+
+
+
+  return `/api/me/dashboard`
+}
+
+/**
+ * @summary Learner dashboard
+ */
+export const getDashboard = async ( options?: Parameters<typeof customFetch>[1]): Promise<Dashboard> => {
+
+  return customFetch<Dashboard>(getGetDashboardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDashboardQueryKey = () => {
+    return [
+    `/api/me/dashboard`
+    ] as const;
+    }
+
+
+export const getGetDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getDashboard>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDashboardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDashboard>>> = ({ signal }) => getDashboard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getDashboard>>>
+export type GetDashboardQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Learner dashboard
+ */
+
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDashboardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListLessonsUrl = () => {
+
+
+
+
+  return `/api/lessons`
+}
+
+/**
+ * @summary List lessons with learner progress
+ */
+export const listLessons = async ( options?: Parameters<typeof customFetch>[1]): Promise<LessonSummary[]> => {
+
+  return customFetch<LessonSummary[]>(getListLessonsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLessonsQueryKey = () => {
+    return [
+    `/api/lessons`
+    ] as const;
+    }
+
+
+export const getListLessonsQueryOptions = <TData = Awaited<ReturnType<typeof listLessons>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLessons>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLessonsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLessons>>> = ({ signal }) => listLessons({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLessons>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLessonsQueryResult = NonNullable<Awaited<ReturnType<typeof listLessons>>>
+export type ListLessonsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List lessons with learner progress
+ */
+
+export function useListLessons<TData = Awaited<ReturnType<typeof listLessons>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLessons>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLessonsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetLessonUrl = (lessonId: string,) => {
+
+
+
+
+  return `/api/lessons/${lessonId}`
+}
+
+/**
+ * @summary Full lesson content
+ */
+export const getLesson = async (lessonId: string, options?: Parameters<typeof customFetch>[1]): Promise<LessonDetail> => {
+
+  return customFetch<LessonDetail>(getGetLessonUrl(lessonId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLessonQueryKey = (lessonId: string,) => {
+    return [
+    `/api/lessons/${lessonId}`
+    ] as const;
+    }
+
+
+export const getGetLessonQueryOptions = <TData = Awaited<ReturnType<typeof getLesson>>, TError = ErrorType<void>>(lessonId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLesson>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLessonQueryKey(lessonId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLesson>>> = ({ signal }) => getLesson(lessonId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: lessonId !== null && lessonId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLesson>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLessonQueryResult = NonNullable<Awaited<ReturnType<typeof getLesson>>>
+export type GetLessonQueryError = ErrorType<void>
+
+
+/**
+ * @summary Full lesson content
+ */
+
+export function useGetLesson<TData = Awaited<ReturnType<typeof getLesson>>, TError = ErrorType<void>>(
+ lessonId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLesson>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLessonQueryOptions(lessonId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListNotebookUrl = (params?: ListNotebookParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/notebook?${stringifiedParams}` : `/api/notebook`
+}
+
+/**
+ * @summary Notebook items
+ */
+export const listNotebook = async (params?: ListNotebookParams, options?: Parameters<typeof customFetch>[1]): Promise<NotebookItem[]> => {
+
+  return customFetch<NotebookItem[]>(getListNotebookUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNotebookQueryKey = (params?: ListNotebookParams,) => {
+    return [
+    `/api/notebook`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListNotebookQueryOptions = <TData = Awaited<ReturnType<typeof listNotebook>>, TError = ErrorType<unknown>>(params?: ListNotebookParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotebook>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNotebookQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNotebook>>> = ({ signal }) => listNotebook(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNotebook>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNotebookQueryResult = NonNullable<Awaited<ReturnType<typeof listNotebook>>>
+export type ListNotebookQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Notebook items
+ */
+
+export function useListNotebook<TData = Awaited<ReturnType<typeof listNotebook>>, TError = ErrorType<unknown>>(
+ params?: ListNotebookParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotebook>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNotebookQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddNotebookItemUrl = () => {
+
+
+
+
+  return `/api/notebook`
+}
+
+/**
+ * @summary Add or update a notebook item
+ */
+export const addNotebookItem = async (notebookItemInput: NotebookItemInput, options?: Parameters<typeof customFetch>[1]): Promise<NotebookItem> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<NotebookItem>(getAddNotebookItemUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(notebookItemInput)
+  }
+);}
+
+
+
+
+
+export const getAddNotebookItemMutationKey = () => ['addNotebookItem'] as const;
+
+export const getAddNotebookItemMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addNotebookItem>>, TError,AddNotebookItemMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addNotebookItem>>, TError,AddNotebookItemMutationVariables, TContext> => {
+
+const mutationKey = getAddNotebookItemMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addNotebookItem>>, AddNotebookItemMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  addNotebookItem(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddNotebookItemMutationResult = NonNullable<Awaited<ReturnType<typeof addNotebookItem>>>
+    export type AddNotebookItemMutationBody = BodyType<NotebookItemInput>
+    export type AddNotebookItemMutationError = ErrorType<unknown>
+    export type AddNotebookItemMutationVariables = {data: BodyType<NotebookItemInput>}
+
+    /**
+ * @summary Add or update a notebook item
+ */
+export const useAddNotebookItem = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addNotebookItem>>, TError,AddNotebookItemMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addNotebookItem>>,
+        TError,
+        AddNotebookItemMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAddNotebookItemMutationOptions(options));
+    }
+
+export const getReviewNotebookItemUrl = (itemId: string,) => {
+
+
+
+
+  return `/api/notebook/${itemId}/review`
+}
+
+/**
+ * @summary Grade a flashcard (SM-2)
+ */
+export const reviewNotebookItem = async (itemId: string,
+    reviewInput: ReviewInput, options?: Parameters<typeof customFetch>[1]): Promise<NotebookItem> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<NotebookItem>(getReviewNotebookItemUrl(itemId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reviewInput)
+  }
+);}
+
+
+
+
+
+export const getReviewNotebookItemMutationKey = () => ['reviewNotebookItem'] as const;
+
+export const getReviewNotebookItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewNotebookItem>>, TError,ReviewNotebookItemMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewNotebookItem>>, TError,ReviewNotebookItemMutationVariables, TContext> => {
+
+const mutationKey = getReviewNotebookItemMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewNotebookItem>>, ReviewNotebookItemMutationVariables> = (props) => {
+          const {itemId,data} = props ?? {};
+
+          return  reviewNotebookItem(itemId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewNotebookItemMutationResult = NonNullable<Awaited<ReturnType<typeof reviewNotebookItem>>>
+    export type ReviewNotebookItemMutationBody = BodyType<ReviewInput>
+    export type ReviewNotebookItemMutationError = ErrorType<void>
+    export type ReviewNotebookItemMutationVariables = {itemId: string;data: BodyType<ReviewInput>}
+
+    /**
+ * @summary Grade a flashcard (SM-2)
+ */
+export const useReviewNotebookItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewNotebookItem>>, TError,ReviewNotebookItemMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviewNotebookItem>>,
+        TError,
+        ReviewNotebookItemMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReviewNotebookItemMutationOptions(options));
+    }
+
+export const getListSessionsUrl = () => {
+
+
+
+
+  return `/api/sessions`
+}
+
+/**
+ * @summary Past sessions
+ */
+export const listSessions = async ( options?: Parameters<typeof customFetch>[1]): Promise<SessionSummary[]> => {
+
+  return customFetch<SessionSummary[]>(getListSessionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSessionsQueryKey = () => {
+    return [
+    `/api/sessions`
+    ] as const;
+    }
+
+
+export const getListSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listSessions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSessionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSessions>>> = ({ signal }) => listSessions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSessions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSessions>>>
+export type ListSessionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Past sessions
+ */
+
+export function useListSessions<TData = Awaited<ReturnType<typeof listSessions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSessionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSessionUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/sessions/${sessionId}`
+}
+
+/**
+ * @summary Session detail with transcript
+ */
+export const getSession = async (sessionId: string, options?: Parameters<typeof customFetch>[1]): Promise<SessionDetail> => {
+
+  return customFetch<SessionDetail>(getGetSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSessionQueryKey = (sessionId: string,) => {
+    return [
+    `/api/sessions/${sessionId}`
+    ] as const;
+    }
+
+
+export const getGetSessionQueryOptions = <TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorType<void>>(sessionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSessionQueryKey(sessionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSession>>> = ({ signal }) => getSession(sessionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: sessionId !== null && sessionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSessionQueryResult = NonNullable<Awaited<ReturnType<typeof getSession>>>
+export type GetSessionQueryError = ErrorType<void>
+
+
+/**
+ * @summary Session detail with transcript
+ */
+
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorType<void>>(
+ sessionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSessionQueryOptions(sessionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 

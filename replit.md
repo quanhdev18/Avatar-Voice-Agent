@@ -1,6 +1,6 @@
-# [Project name]
+# Sensei AI
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+1-1 Japanese (JLPT N5) lessons for Vietnamese learners with an AI teacher (Yuki-sensei) in a video-call style classroom. See README.md.
 
 ## Run & Operate
 
@@ -22,11 +22,16 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- DB schema: `lib/db/src/schema/` · curriculum seed: `lib/db/src/curriculum/n5.ts` · SM-2: `lib/db/src/srs.ts`
+- API contract: `lib/api-spec/openapi.yaml` · routes: `artifacts/api-server/src/routes/`
+- Agent: `artifacts/api-server/src/senseiAgent.ts` · classroom UI: `artifacts/sensei-ai/src/pages/classroom.tsx`
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Without CLERK_SECRET_KEY the API runs in demo-auth mode (single `demo-learner`, refused in production); the web app uses demo mode unless VITE_CLERK_PUBLISHABLE_KEY is set.
+- Voice/avatar providers sit behind interfaces in `artifacts/api-server/src/agent/providers.ts` (VOICE_PROVIDER, AVATAR_PROVIDER).
+- Without LiveKit/voice keys, the classroom offers a browser-side demo teacher (`artifacts/sensei-ai/src/classroom/demoTransport.ts`) emitting the same events as the agent.
+- Usage minutes are billed from server-measured wall time; per-session and per-day limits in `lib/config.ts`.
 
 ## Product
 

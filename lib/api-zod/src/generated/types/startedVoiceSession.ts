@@ -5,11 +5,19 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { StartedVoiceSessionMode } from './startedVoiceSessionMode';
 
 export interface StartedVoiceSession {
   sessionId: string;
   roomName: string;
-  livekitUrl: string;
-  participantToken: string;
+  mode: StartedVoiceSessionMode;
+  /** @nullable */
+  livekitUrl: string | null;
+  /** @nullable */
+  participantToken: string | null;
   tokenExpiresAt: Date;
+  maxDurationSeconds: number;
+  remainingDailySeconds: number;
+  /** @nullable */
+  avatarProvider: string | null;
 }

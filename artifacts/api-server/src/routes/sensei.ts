@@ -1,7 +1,6 @@
 import { AccessToken } from "livekit-server-sdk";
-import { getAuth } from "@clerk/express";
 import { randomUUID } from "node:crypto";
-import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
+import { Router, type IRouter } from "express";
 import {
   FinishVoiceSessionBody,
   FinishVoiceSessionParams,
@@ -10,35 +9,31 @@ import {
   StartVoiceSessionBody,
   StartVoiceSessionResponse,
 } from "@workspace/api-zod";
-import { and, db, eq, senseiSessionsTable } from "@workspace/db";
+import { and, db, eq, lessonsTable, senseiSessionsTable } from "@workspace/db";
+import { requireAuth, userIdOf } from "../lib/auth";
+import {
+  authMode,
+  avatarConfigured,
+  config,
+  missingVoiceProviders,
+} from "../lib/config";
+import { setLessonProgress } from "../lib/curriculum";
+import { ensureProfile, recordStudy, secondsUsedToday, summarizeSession } from "../lib/learner";
 
 const router: IRouter = Router();
 
-function missingVoiceProviders(): Array<"livekit" | "gemini"> {
-  const missing: Array<"livekit" | "gemini"> = [];
-  if (!process.env.LIVEKIT_URL || !process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET) {
-    missing.push("livekit");
-  }
-  if (!process.env.GOOGLE_API_KEY) {
-    missing.push("gemini");
-  }
-  return missing;
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  if (!getAuth(req).userId) {
-    res.status(401).json({ error: "Sign in is required to use the classroom." });
-    return;
-  }
-  next();
-}
-
 router.get("/sensei/voice-status", (_req, res): void => {
   const missingProviders = missingVoiceProviders();
-  res.json(GetVoiceStatusResponse.parse({
-    available: missingProviders.length === 0,
-    missingProviders,
-  }));
+  const avatar = avatarConfigured();
+  res.json(
+    GetVoiceStatusResponse.parse({
+      available: missingProviders.length === 0,
+      missingProviders,
+      voiceProvider: config.voiceProvider,
+      avatarProvider: avatar === "none" ? null : avatar,
+      authMode: authMode(),
+    }),
+  );
 });
 
 router.post("/sensei/sessions", requireAuth, async (req, res): Promise<void> => {
@@ -47,125 +42,155 @@ router.post("/sensei/sessions", requireAuth, async (req, res): Promise<void> => 
     res.status(400).json({ error: body.error.message });
     return;
   }
+  const userId = userIdOf(res);
+  const mode = body.data.mode ?? "voice";
+
+  const [lesson] = await db.select().from(lessonsTable).where(eq(lessonsTable.id, body.data.lessonId));
+  if (!lesson) {
+    res.status(404).json({ error: "Không tìm thấy bài học." });
+    return;
+  }
 
   const missingProviders = missingVoiceProviders();
-  if (missingProviders.length > 0) {
-    res.status(503).json({
-      error: "Voice providers are not configured.",
-      missingProviders,
+  if (mode === "voice" && missingProviders.length > 0) {
+    res.status(503).json({ error: "Voice providers are not configured.", missingProviders });
+    return;
+  }
+
+  // Per-day minute budget (avatar + realtime voice are billed per minute).
+  const profile = await ensureProfile(userId);
+  const remainingDailySeconds = Math.max(0, profile.dailyMinuteLimit * 60 - (await secondsUsedToday(userId)));
+  if (remainingDailySeconds < 30) {
+    res.status(429).json({
+      error: `Bạn đã dùng hết ${profile.dailyMinuteLimit} phút học hôm nay. Hẹn gặp lại ngày mai!`,
     });
     return;
   }
-
-  const userId = getAuth(req).userId;
-  if (!userId) {
-    res.status(401).json({ error: "Sign in is required to use the classroom." });
-    return;
-  }
+  const maxDurationSeconds = Math.min(config.maxSessionSeconds, remainingDailySeconds);
 
   const roomName = `sensei-${randomUUID()}`;
-  const expiresInSeconds = 15 * 60;
-  const accessToken = new AccessToken(
-    process.env.LIVEKIT_API_KEY!,
-    process.env.LIVEKIT_API_SECRET!,
-    { identity: userId, ttl: `${expiresInSeconds}s`, name: "Learner" },
-  );
-  accessToken.addGrant({
-    roomJoin: true,
-    room: roomName,
-    canPublish: true,
-    canSubscribe: true,
-    canPublishData: true,
-  });
-  const participantToken = await accessToken.toJwt();
-
+  const avatar = mode === "voice" ? avatarConfigured() : "none";
   const [session] = await db
     .insert(senseiSessionsTable)
     .values({
       userId,
-      lessonId: body.data.lessonId,
+      lessonId: lesson.id,
       roomName,
+      mode,
+      avatarProvider: avatar === "none" ? null : avatar,
       status: "active",
       transcript: [],
       commonMistakes: [],
     })
     .returning({ id: senseiSessionsTable.id });
+  await setLessonProgress(userId, lesson.id, "in_progress");
 
-  res.status(201).json(StartVoiceSessionResponse.parse({
-    sessionId: session.id,
-    roomName,
-    livekitUrl: process.env.LIVEKIT_URL,
-    participantToken,
-    tokenExpiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString(),
-  }));
+  let livekitUrl: string | null = null;
+  let participantToken: string | null = null;
+  const tokenTtl = maxDurationSeconds + 120;
+  if (mode === "voice") {
+    const accessToken = new AccessToken(process.env.LIVEKIT_API_KEY!, process.env.LIVEKIT_API_SECRET!, {
+      identity: userId,
+      ttl: `${tokenTtl}s`,
+      name: profile.displayName ?? "Learner",
+      // The agent reads this to know which lesson/session it is teaching.
+      metadata: JSON.stringify({ sessionId: session!.id, lessonId: lesson.id, maxDurationSeconds }),
+    });
+    accessToken.addGrant({
+      roomJoin: true,
+      room: roomName,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+    participantToken = await accessToken.toJwt();
+    livekitUrl = process.env.LIVEKIT_URL!;
+  }
+
+  res.status(201).json(
+    StartVoiceSessionResponse.parse({
+      sessionId: session!.id,
+      roomName,
+      mode,
+      livekitUrl,
+      participantToken,
+      tokenExpiresAt: new Date(Date.now() + tokenTtl * 1000).toISOString(),
+      maxDurationSeconds,
+      remainingDailySeconds,
+      avatarProvider: avatar === "none" ? null : avatar,
+    }),
+  );
 });
 
-router.post(
-  "/sensei/sessions/:sessionId/finish",
-  requireAuth,
-  async (req, res): Promise<void> => {
-    const params = FinishVoiceSessionParams.safeParse(req.params);
-    if (!params.success) {
-      res.status(400).json({ error: params.error.message });
-      return;
-    }
+router.post("/sensei/sessions/:sessionId/finish", requireAuth, async (req, res): Promise<void> => {
+  const params = FinishVoiceSessionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = FinishVoiceSessionBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const userId = userIdOf(res);
+  const where = and(eq(senseiSessionsTable.id, params.data.sessionId), eq(senseiSessionsTable.userId, userId));
+  const [existing] = await db.select().from(senseiSessionsTable).where(where);
+  if (!existing) {
+    res.status(404).json({ error: "Session not found." });
+    return;
+  }
 
-    const body = FinishVoiceSessionBody.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ error: body.error.message });
-      return;
-    }
-
-    const userId = getAuth(req).userId;
-    if (!userId) {
-      res.status(401).json({ error: "Sign in is required to use the classroom." });
-      return;
-    }
-
-    const where = and(
-      eq(senseiSessionsTable.id, params.data.sessionId),
-      eq(senseiSessionsTable.userId, userId),
+  const respond = (s: typeof existing) =>
+    res.json(
+      FinishVoiceSessionResponse.parse({
+        sessionId: s.id,
+        status: "completed",
+        durationSeconds: s.durationSeconds ?? 0,
+        transcript: s.transcript,
+        summary: s.summary,
+        commonMistakes: s.commonMistakes,
+      }),
     );
-    const [existing] = await db.select().from(senseiSessionsTable).where(where);
-    if (!existing) {
-      res.status(404).json({ error: "Session not found." });
-      return;
-    }
+  if (existing.status === "completed") {
+    respond(existing);
+    return;
+  }
 
-    if (existing.status === "completed") {
-      res.json(FinishVoiceSessionResponse.parse({
-        sessionId: existing.id,
-        status: "completed",
-        durationSeconds: existing.durationSeconds ?? 0,
-        transcript: existing.transcript,
-        summary: existing.summary,
-        commonMistakes: existing.commonMistakes,
-      }));
-      return;
-    }
+  // Bill by server-measured wall time, never more than the session cap.
+  const serverSeconds = Math.floor((Date.now() - existing.startedAt.getTime()) / 1000);
+  const durationSeconds = Math.min(serverSeconds, body.data.durationSeconds + 5, config.maxSessionSeconds + 60);
 
-    const [session] = await db
-      .update(senseiSessionsTable)
-      .set({
-        status: "completed",
-        durationSeconds: body.data.durationSeconds,
-        transcript: body.data.transcript,
-        summary: body.data.summary ?? null,
-        commonMistakes: body.data.commonMistakes ?? [],
-        completedAt: new Date(),
-      })
-      .where(where)
-      .returning();
+  const [lesson] = await db.select().from(lessonsTable).where(eq(lessonsTable.id, existing.lessonId));
+  // Mistakes recorded live by the agent (record_mistake tool) + any the client sent.
+  const knownMistakes = [...new Set([...existing.commonMistakes, ...(body.data.commonMistakes ?? [])])];
+  const generated = body.data.summary
+    ? { summary: body.data.summary, mistakes: knownMistakes }
+    : await summarizeSession(lesson?.titleVi ?? existing.lessonId, body.data.transcript, knownMistakes);
 
-    res.json(FinishVoiceSessionResponse.parse({
-      sessionId: session.id,
+  const [session] = await db
+    .update(senseiSessionsTable)
+    .set({
       status: "completed",
-      durationSeconds: session.durationSeconds ?? 0,
-      transcript: session.transcript,
-      summary: session.summary,
-      commonMistakes: session.commonMistakes,
-    }));
-  },
-);
+      durationSeconds,
+      transcript: body.data.transcript,
+      summary: generated.summary,
+      commonMistakes: generated.mistakes.slice(0, 50),
+      completedAt: new Date(),
+    })
+    .where(and(where, eq(senseiSessionsTable.status, "active")))
+    .returning();
+  if (!session) {
+    // The agent finalised it concurrently; return what is stored.
+    const [stored] = await db.select().from(senseiSessionsTable).where(where);
+    respond(stored!);
+    return;
+  }
+  await recordStudy(userId, durationSeconds);
+  if (session.mode === "demo" && body.data.lessonCompleted) {
+    await setLessonProgress(userId, session.lessonId, "completed");
+  }
+  respond(session);
+});
 
 export default router;

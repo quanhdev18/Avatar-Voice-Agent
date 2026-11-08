@@ -12,4 +12,5 @@ export type VoiceStatusMissingProvidersItem = typeof VoiceStatusMissingProviders
 export const VoiceStatusMissingProvidersItem = {
   livekit: 'livekit',
   gemini: 'gemini',
+  openai: 'openai',
 } as const;
