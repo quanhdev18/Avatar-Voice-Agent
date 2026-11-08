@@ -1,23 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
-import { Lock, Plus, RefreshCw, Search, Shuffle, Signal } from 'lucide-react';
+import { Bot, Lock, Plus, Search, Shuffle, WifiOff } from 'lucide-react';
+import type { MapId, RoomSummary } from '@workspace/game-core';
 
 import { Page } from '@/components/Layout';
+import { StickFigure } from '@/components/StickFigure';
 import { Badge, Button, Modal, Panel, Tabs, Toggle } from '@/components/ui';
-import { MAPS, MODE_LABEL, ROOMS, type GameMode, type Room } from '@/lib/mock';
+import { MAPS, MODE_LABEL } from '@/lib/mock';
 import { cn } from '@/lib/utils';
+import { net, useNet } from '@/net/client';
 
-type Filter = 'all' | GameMode;
+type Filter = 'all' | 'team' | 'ffa';
 
-function PingBadge({ ping }: { ping: number }) {
-  const tone = ping < 35 ? 'text-mint' : ping < 55 ? 'text-marker' : 'text-crimson';
-  return (
-    <span className={cn('inline-flex items-center gap-1 tabular-nums', tone)}>
-      <Signal size={16} strokeWidth={3} />
-      <span className="text-ink">{ping}ms</span>
-    </span>
-  );
-}
+const mapName = (id: string) => MAPS.find((m) => m.id === id)?.name ?? id;
 
 function Slots({ n, max }: { n: number; max: number }) {
   return (
@@ -32,23 +27,54 @@ function Slots({ n, max }: { n: number; max: number }) {
   );
 }
 
+/** Navigate to the room page once the server has put us in a room. */
+function useGoToRoomWhenJoined(active: boolean) {
+  const [, nav] = useLocation();
+  const room = useNet((s) => s.room);
+  useEffect(() => {
+    if (active && room) nav(`/room/${room.id}`);
+  }, [active, room, nav]);
+}
+
 export default function Lobby() {
   const [, nav] = useLocation();
+  const status = useNet((s) => s.status);
+  const rooms = useNet((s) => s.rooms);
+  const inRoom = useNet((s) => s.room);
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
   const [hideFull, setHideFull] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [spin, setSpin] = useState(false);
+  const [pwRoom, setPwRoom] = useState<RoomSummary | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const online = status === 'open';
 
-  const rooms = useMemo(
+  // Coming back to the lobby means leaving whatever room we were in.
+  const leftOnMount = useRef(false);
+  useEffect(() => {
+    if (!leftOnMount.current && inRoom) net.send({ t: 'leave' });
+    leftOnMount.current = true;
+  }, [inRoom]);
+
+  useGoToRoomWhenJoined(waiting);
+  // stop waiting if the server answered with an error
+  const error = useNet((s) => s.error);
+  useEffect(() => setWaiting(false), [error]);
+
+  const list = useMemo(
     () =>
-      ROOMS.filter((r) => filter === 'all' || r.mode === filter)
+      rooms
+        .filter((r) => filter === 'all' || r.mode === filter)
         .filter((r) => !hideFull || r.players < r.max)
         .filter((r) => (r.name + r.host + r.id).toLowerCase().includes(q.toLowerCase())),
-    [filter, q, hideFull],
+    [rooms, filter, q, hideFull],
   );
 
-  const join = (r: Room) => nav(`/room/${r.id}`);
+  const join = (r: RoomSummary, password?: string) => {
+    if (r.locked && password === undefined) return setPwRoom(r);
+    setWaiting(true);
+    net.send({ t: 'join', roomId: r.id, password });
+  };
 
   return (
     <Page>
@@ -58,10 +84,17 @@ export default function Lobby() {
           <p className="text-lg text-ink-soft">Chọn một phòng để vào, hoặc tự lập phòng cho hội bạn.</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="yellow" onClick={() => nav('/room/' + ROOMS[0].id)}>
+          <Button
+            variant="yellow"
+            disabled={!online}
+            onClick={() => {
+              setWaiting(true);
+              net.send({ t: 'quick' });
+            }}
+          >
             <Shuffle size={18} strokeWidth={3} /> Ghép nhanh
           </Button>
-          <Button variant="red" onClick={() => setCreateOpen(true)}>
+          <Button variant="red" disabled={!online} onClick={() => setCreateOpen(true)}>
             <Plus size={18} strokeWidth={3} /> Tạo phòng
           </Button>
         </div>
@@ -77,138 +110,198 @@ export default function Lobby() {
                 { value: 'all', label: 'Tất cả' },
                 { value: 'team', label: MODE_LABEL.team },
                 { value: 'ffa', label: MODE_LABEL.ffa },
-                { value: 'koth', label: MODE_LABEL.koth },
               ]}
             />
             <label className="relative ml-auto min-w-48 flex-1 sm:max-w-64">
               <Search size={18} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-soft" />
               <input className="input-sk pl-9" placeholder="Tìm phòng, chủ phòng, mã…" value={q} onChange={(e) => setQ(e.target.value)} />
             </label>
-            <button
-              className="btn h-10 w-10 bg-paper-3 p-0"
-              aria-label="Làm mới"
-              onClick={() => {
-                setSpin(true);
-                setTimeout(() => setSpin(false), 600);
-              }}
-            >
-              <RefreshCw size={18} strokeWidth={2.5} className={spin ? 'animate-spin' : ''} />
-            </button>
           </div>
 
-          {/* table header (desktop) */}
-          <div className="hidden grid-cols-[1fr_110px_120px_120px_80px_96px] gap-3 border-b-2 border-dashed border-ink/30 px-4 py-2 font-display text-[11px] text-ink-soft uppercase md:grid">
-            <span>Phòng</span>
-            <span>Chế độ</span>
-            <span>Bản đồ</span>
-            <span>Người chơi</span>
-            <span>Ping</span>
-            <span />
-          </div>
-          <ul className="divide-y-2 divide-dashed divide-ink/20">
-            {rooms.map((r, i) => {
-              const full = r.players >= r.max;
-              return (
-                <li
-                  key={r.id}
-                  className="anim-slide-in grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 transition-colors hover:bg-paper-2 md:grid-cols-[1fr_110px_120px_120px_80px_96px]"
-                  style={{ animationDelay: `${i * 40}ms` }}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      {r.locked && <Lock size={15} strokeWidth={3} className="shrink-0" aria-label="Có mật khẩu" />}
-                      <span className="truncate text-lg font-bold">{r.name}</span>
-                    </div>
-                    <div className="text-sm text-ink-soft">
-                      #{r.id} · chủ phòng {r.host}
-                    </div>
-                  </div>
-                  <div className="md:hidden">
-                    <Button size="sm" variant={full || r.status === 'playing' ? 'paper' : 'blue'} disabled={full} onClick={() => join(r)}>
-                      {r.status === 'playing' ? 'Xem' : 'Vào'}
+          {!online ? (
+            <OfflineState status={status} />
+          ) : (
+            <>
+              <div className="hidden grid-cols-[1fr_110px_120px_150px_96px] gap-3 border-b-2 border-dashed border-ink/30 px-4 py-2 font-display text-[11px] text-ink-soft uppercase md:grid">
+                <span>Phòng</span>
+                <span>Chế độ</span>
+                <span>Bản đồ</span>
+                <span>Người chơi</span>
+                <span />
+              </div>
+              <ul className="divide-y-2 divide-dashed divide-ink/20">
+                {list.map((r, i) => {
+                  const full = r.players >= r.max;
+                  const label = full ? 'Đầy' : r.phase === 'playing' ? 'Vào giữa trận' : 'Vào';
+                  const btn = (
+                    <Button size="sm" variant={full ? 'paper' : 'blue'} disabled={full || waiting} onClick={() => join(r)}>
+                      {label}
                     </Button>
-                  </div>
-                  <div className="col-span-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm md:contents md:text-base">
-                    <span>
-                      <Badge tone={r.mode === 'team' ? 'blue' : r.mode === 'ffa' ? 'red' : 'yellow'}>{MODE_LABEL[r.mode]}</Badge>
-                    </span>
-                    <span className="truncate">{r.map}</span>
-                    <Slots n={r.players} max={r.max} />
-                    <PingBadge ping={r.ping} />
-                  </div>
-                  <div className="hidden justify-end md:flex">
-                    <Button size="sm" variant={full || r.status === 'playing' ? 'paper' : 'blue'} disabled={full} onClick={() => join(r)}>
-                      {full ? 'Đầy' : r.status === 'playing' ? 'Xem' : 'Vào'}
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-            {rooms.length === 0 && (
-              <li className="p-10 text-center text-lg text-ink-soft">
-                Không tìm thấy phòng nào… <button className="text-crimson underline" onClick={() => setCreateOpen(true)}>tự tạo một phòng?</button>
-              </li>
-            )}
-          </ul>
+                  );
+                  return (
+                    <li
+                      key={r.id}
+                      className="anim-slide-in grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 transition-colors hover:bg-paper-2 md:grid-cols-[1fr_110px_120px_150px_96px]"
+                      style={{ animationDelay: `${i * 40}ms` }}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          {r.locked && <Lock size={15} strokeWidth={3} className="shrink-0" aria-label="Có mật khẩu" />}
+                          <span className="truncate text-lg font-bold">{r.name}</span>
+                        </div>
+                        <div className="text-sm text-ink-soft">
+                          #{r.id} · chủ phòng {r.host}
+                          {r.phase !== 'waiting' && <span className="ml-2 text-crimson">● đang đấu</span>}
+                        </div>
+                      </div>
+                      <div className="md:hidden">{btn}</div>
+                      <div className="col-span-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm md:contents md:text-base">
+                        <span>
+                          <Badge tone={r.mode === 'team' ? 'blue' : 'red'}>{MODE_LABEL[r.mode]}</Badge>
+                        </span>
+                        <span className="truncate">{mapName(r.map)}</span>
+                        <Slots n={r.players} max={r.max} />
+                      </div>
+                      <div className="hidden justify-end md:flex">{btn}</div>
+                    </li>
+                  );
+                })}
+                {list.length === 0 && (
+                  <li className="flex flex-col items-center gap-2 p-10 text-center text-lg text-ink-soft">
+                    <div className="h-28 w-28">
+                      <StickFigure pose="taunt" />
+                    </div>
+                    {rooms.length === 0 ? 'Chưa có phòng nào đang mở.' : 'Không có phòng khớp bộ lọc.'}
+                    <button className="text-crimson underline" onClick={() => setCreateOpen(true)}>
+                      Tự tạo một phòng?
+                    </button>
+                  </li>
+                )}
+              </ul>
+            </>
+          )}
         </Panel>
 
         <aside className="space-y-6">
           <Panel title="Bộ lọc" tone="paper-2">
             <Toggle label="Ẩn phòng đã đầy" checked={hideFull} onChange={setHideFull} />
           </Panel>
-          <Panel title="Bạn bè online" tape>
-            <ul className="space-y-2">
-              {[
-                ['MeoMeo', 'Đang ở sảnh', true],
-                ['KhoaBu', 'Trong trận · Núi lửa', true],
-                ['GaCon', 'Offline 2 giờ', false],
-              ].map(([n, s, on]) => (
-                <li key={n as string} className="flex items-center gap-2">
-                  <span className={cn('h-3 w-3 rounded-full border-2 border-ink', on ? 'bg-mint' : 'bg-paper-2')} />
-                  <span className="flex-1">
-                    <span className="block leading-tight">{n}</span>
-                    <span className="block text-sm text-ink-soft">{s}</span>
-                  </span>
-                  {on && <Button size="sm">Mời</Button>}
-                </li>
-              ))}
-            </ul>
+          <Panel title="Chơi một mình" tape>
+            <p className="mb-3 text-ink-soft">Luyện tay với 5 bot, không cần mạng.</p>
+            <Button className="w-full" onClick={() => nav('/play')}>
+              <Bot size={18} strokeWidth={3} /> Đấu với bot
+            </Button>
           </Panel>
         </aside>
       </div>
 
-      <CreateRoomModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={() => nav('/room/NEW1')} />
+      <CreateRoomModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreate={(opts) => {
+          setWaiting(true);
+          net.send({ t: 'create', ...opts });
+          setCreateOpen(false);
+        }}
+      />
+      <PasswordModal
+        room={pwRoom}
+        onClose={() => setPwRoom(null)}
+        onSubmit={(pw) => {
+          if (pwRoom) join(pwRoom, pw);
+          setPwRoom(null);
+        }}
+      />
     </Page>
   );
 }
 
-function CreateRoomModal({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: () => void }) {
-  const [mode, setMode] = useState<GameMode>('team');
-  const [map, setMap] = useState(MAPS[0].id);
-  const [max, setMax] = useState(8);
+function OfflineState({ status }: { status: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 p-10 text-center">
+      <WifiOff size={40} strokeWidth={2.5} className="text-crimson" />
+      <div className="font-display text-xl">{status === 'connecting' ? 'Đang kết nối máy chủ…' : 'Chưa kết nối được máy chủ'}</div>
+      <p className="max-w-sm text-ink-soft">Danh sách phòng sẽ hiện khi kết nối xong. Trong lúc chờ, bạn vẫn có thể đấu với bot.</p>
+      <Button size="sm" onClick={() => net.retry()} disabled={status === 'connecting'}>
+        Thử lại
+      </Button>
+    </div>
+  );
+}
+
+function PasswordModal({ room, onClose, onSubmit }: { room: RoomSummary | null; onClose: () => void; onSubmit: (pw: string) => void }) {
+  const [pw, setPw] = useState('');
+  return (
+    <Modal open={!!room} onClose={onClose} title="Phòng có mật khẩu">
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit(pw);
+          setPw('');
+        }}
+      >
+        <p>
+          Nhập mật khẩu để vào <b>{room?.name}</b>.
+        </p>
+        <input className="input-sk" type="password" autoFocus value={pw} onChange={(e) => setPw(e.target.value)} maxLength={32} />
+        <div className="flex justify-end gap-3">
+          <Button type="button" onClick={onClose}>
+            Huỷ
+          </Button>
+          <Button type="submit" variant="blue" disabled={!pw}>
+            Vào phòng
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+type CreateOpts = { name: string; mode: 'team' | 'ffa'; map: MapId; max: 2 | 4 | 6 | 8; password?: string };
+
+function CreateRoomModal({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (o: CreateOpts) => void }) {
+  const [name, setName] = useState('Phòng của tui');
+  const [mode, setMode] = useState<'team' | 'ffa' | 'koth'>('team');
+  const [map, setMap] = useState<MapId>('notebook');
+  const [max, setMax] = useState<2 | 4 | 6 | 8>(8);
   const [priv, setPriv] = useState(false);
+  const [pw, setPw] = useState('');
+  const valid = name.trim().length > 0 && mode !== 'koth' && (!priv || pw.length > 0);
   return (
     <Modal open={open} onClose={onClose} title="Tạo phòng mới">
-      <div className="space-y-4">
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid && (mode === 'team' || mode === 'ffa')) onCreate({ name: name.trim(), mode, map, max, password: priv ? pw : undefined });
+        }}
+      >
         <label className="block">
           <span className="mb-1 block">Tên phòng</span>
-          <input className="input-sk" defaultValue="Phòng của tui" maxLength={32} />
+          <input className="input-sk" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
         </label>
         <div>
           <span className="mb-1 block">Chế độ</span>
-          <Tabs<GameMode>
+          <Tabs<'team' | 'ffa' | 'koth'>
             value={mode}
             onChange={setMode}
-            options={(Object.keys(MODE_LABEL) as GameMode[]).map((m) => ({ value: m, label: MODE_LABEL[m] }))}
+            options={[
+              { value: 'team', label: MODE_LABEL.team },
+              { value: 'ffa', label: MODE_LABEL.ffa },
+              { value: 'koth', label: `${MODE_LABEL.koth} (sắp có)` },
+            ]}
           />
+          {mode === 'koth' && <p className="mt-1 text-sm text-crimson">Chế độ Giữ đồi chưa mở, chọn chế độ khác nhé.</p>}
         </div>
         <div>
           <span className="mb-1 block">Bản đồ</span>
           <div className="grid grid-cols-2 gap-3">
             {MAPS.map((m) => (
               <button
+                type="button"
                 key={m.id}
-                onClick={() => setMap(m.id)}
+                onClick={() => setMap(m.id as MapId)}
                 className={cn(
                   'sk focus-ring p-2 text-left transition-transform',
                   map === m.id ? 'shadow-ink -translate-y-0.5 bg-marker text-on-marker' : 'bg-paper-3 hover:bg-paper-2',
@@ -220,24 +313,27 @@ function CreateRoomModal({ open, onClose, onCreate }: { open: boolean; onClose: 
               </button>
             ))}
           </div>
+          <p className="mt-1 text-sm text-ink-soft">Hiện mọi bản đồ dùng chung bố cục Trang vở; địa hình riêng sẽ có sau.</p>
         </div>
         <div>
           <span className="mb-1 block">Số người tối đa</span>
           <Tabs
             value={String(max)}
-            onChange={(v) => setMax(Number(v))}
+            onChange={(v) => setMax(Number(v) as 2 | 4 | 6 | 8)}
             options={['2', '4', '6', '8'].map((v) => ({ value: v, label: v }))}
           />
         </div>
         <Toggle label="Phòng kín (cần mật khẩu)" checked={priv} onChange={setPriv} />
-        {priv && <input className="input-sk" type="password" placeholder="Mật khẩu" />}
+        {priv && <input className="input-sk" type="password" placeholder="Mật khẩu" value={pw} onChange={(e) => setPw(e.target.value)} maxLength={32} />}
         <div className="flex justify-end gap-3 pt-2">
-          <Button onClick={onClose}>Huỷ</Button>
-          <Button variant="red" onClick={onCreate}>
+          <Button type="button" onClick={onClose}>
+            Huỷ
+          </Button>
+          <Button type="submit" variant="red" disabled={!valid}>
             Tạo phòng
           </Button>
         </div>
-      </div>
+      </form>
     </Modal>
   );
 }

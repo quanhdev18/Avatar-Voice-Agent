@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { GameServer } from "./game/server";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -17,7 +18,7 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+const server = app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -58,3 +59,6 @@ app.listen(port, (err) => {
   process.once("SIGTERM", () => worker.kill("SIGTERM"));
   process.once("SIGINT", () => worker.kill("SIGINT"));
 });
+
+// Que Chiến multiplayer: WebSocket endpoint at /api/game/ws on the same port.
+new GameServer(server);

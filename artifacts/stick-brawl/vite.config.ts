@@ -22,6 +22,16 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
   },
-  server: { port, strictPort: true, host: '0.0.0.0', allowedHosts: true },
+  server: {
+    port,
+    strictPort: true,
+    host: '0.0.0.0',
+    allowedHosts: true,
+    // Local dev: forward the API + game WebSocket to api-server.
+    // (On Replit the path router sends /api straight to api-server.)
+    proxy: {
+      '/api': { target: process.env.API_PROXY_TARGET ?? 'http://localhost:8080', ws: true, changeOrigin: true },
+    },
+  },
   preview: { port, host: '0.0.0.0', allowedHosts: true },
 });

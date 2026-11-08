@@ -22,16 +22,22 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-- `artifacts/stick-brawl` — **Que Chiến**, multiplayer stick-figure fighting game (UI phase, local demo only, no netcode yet)
+- `artifacts/stick-brawl` — **Que Chiến**, multiplayer stick-figure fighting game (web client)
   - `src/index.css` — design tokens (paper / chalkboard themes) and sketchy primitives (`.sk`, `.btn`, `.hl`, `.hatch`)
   - `src/components/StickFigure.tsx` — animated SVG fighter (poses, accessories, weapons)
   - `src/components/ui.tsx` — Button, Panel, Bar, Badge, Tabs, Toggle, Slider, Modal, Burst…
-  - `src/pages/*` — Home, Lobby, Room, Customize, Play (HUD + local bot sim), Results, Kit
-  - Run: `pnpm --filter @workspace/stick-brawl run dev` (port 25224)
+  - `src/pages/*` — Home, Lobby, Room, Customize, Play (online via `/room/:id/play`, offline bots via `/play`), Results, Kit
+  - `src/net/client.ts` — WebSocket client, lobby/room state (`useNet`), `NetMatch` (snapshot interpolation + own-fighter prediction)
+  - Run: `pnpm --filter @workspace/stick-brawl run dev` (port 25224; proxies `/api` incl. WebSocket to `API_PROXY_TARGET`, default `http://localhost:8080`)
+- `lib/game-core` — shared fight simulation (`sim.ts`), cosmetics whitelist, and the WebSocket protocol + zod schemas (`protocol.ts`). Used by both client and server.
+- `artifacts/api-server/src/game/` — authoritative game server on `/api/game/ws` (same port as the API): `server.ts` (connections, validation, rate limits, lobby), `room.ts` (members, bots, countdown, 30 Hz match loop, 15 Hz snapshots)
+  - `GAME_MATCH_SECONDS` env overrides match length (default 180) for quick testing
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Que Chiến multiplayer is server-authoritative: clients send only packed key states (`{t:'in', s:seq, b:bits}`) at 30 Hz; the server simulates and broadcasts snapshots. Clients never send positions or damage.
+- The same `lib/game-core` sim runs on the client to predict the local fighter (replaying un-acked inputs after each snapshot); other fighters are interpolated ~100 ms in the past.
+- Game state is in-memory only (rooms vanish on restart). Single process; scaling out would need sticky routing per room.
 
 ## Product
 

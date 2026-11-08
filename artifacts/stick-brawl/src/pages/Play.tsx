@@ -1,121 +1,91 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
-import { useLocation } from 'wouter';
-import { ArrowBigLeft, ArrowBigRight, ArrowBigUp, Pause } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
+import { useLocation, useParams } from 'wouter';
+import { ArrowBigLeft, ArrowBigRight, ArrowBigUp, Pause, Wifi } from 'lucide-react';
+import {
+  DT,
+  GROUND,
+  H,
+  PLATFORMS,
+  W,
+  ATTACK,
+  botInput,
+  createMatch,
+  newBrain,
+  stepMatch,
+  winScore,
+  type BotBrain,
+  type Fighter,
+  type GameEvent,
+  type Match,
+} from '@workspace/game-core';
 
 import { ControlsList, SettingsModal } from '@/components/Layout';
-import { StickFigure, type Accessory, type Pose, type Weapon } from '@/components/StickFigure';
+import { StickFigure, type Pose } from '@/components/StickFigure';
 import { Bar, Burst, Button, Head, IconButton, Kbd, Modal, hpColor } from '@/components/ui';
 import { BOTS } from '@/lib/mock';
-import { setLastResult, useStore } from '@/lib/store';
+import { setLastResult, useStore, type MatchResult, type Profile } from '@/lib/store';
 import { cn, formatTime } from '@/lib/utils';
+import { net, takeInput, useNet, type InputState, type MatchView } from '@/net/client';
 
-/* ------------------------------------------------------------------ */
-/* Local demo simulation — stands in for the future netcode            */
-/* ------------------------------------------------------------------ */
-const W = 1000;
-const H = 560;
-const GROUND = 470;
-const PLATFORMS = [
-  { x1: 140, x2: 360, y: 340 },
-  { x1: 640, x2: 860, y: 340 },
-  { x1: 400, x2: 600, y: 215 },
-];
-const GRAVITY = 1700;
-const SPEED = 260;
-const JUMP = 720;
-const MATCH_SEC = 180;
-const WIN_KOS = 10;
 const FIG_K = 0.85; // viewBox → world scale
-
-type Team = 'red' | 'blue';
-type Action = 'none' | 'punch' | 'kick' | 'block' | 'super';
-
-type Fighter = {
-  id: number;
-  name: string;
-  team: Team;
-  color: string;
-  accessory: Accessory;
-  weapon: Weapon;
-  you: boolean;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  facing: 1 | -1;
-  onGround: boolean;
-  hp: number;
-  energy: number;
-  action: Action;
-  actionT: number;
-  hitDone: boolean;
-  hurtT: number;
-  koT: number;
-  kos: number;
-  falls: number;
-  damage: number;
-  aiT: number;
-  aiMove: number;
-  cooldown: number;
-};
-
-const ATTACK = {
-  punch: { dur: 0.3, hitAt: 0.1, range: 64, dmg: 7, knock: 180, cd: 0.32 },
-  kick: { dur: 0.45, hitAt: 0.18, range: 80, dmg: 11, knock: 280, cd: 0.5 },
-  super: { dur: 0.6, hitAt: 0.22, range: 170, dmg: 26, knock: 620, cd: 0.6 },
-} as const;
-
-const WEAPON_MOD: Record<Weapon, { dmg: number; range: number; speed: number }> = {
-  none: { dmg: 1, range: 0, speed: 1 },
-  sword: { dmg: 1.25, range: 14, speed: 1 },
-  staff: { dmg: 1.05, range: 30, speed: 1.1 },
-  hammer: { dmg: 1.5, range: 10, speed: 1.3 },
-};
-
 const HIT_WORDS = ['BỐP!', 'HỰ!', 'BỤP!', 'RẮC!', 'ỐI!'];
 
-type Popup = { id: number; x: number; y: number; text: string; at: number; big?: boolean; block?: boolean };
-type Feed = { id: number; killer: string; victim: string; kTeam: Team; vTeam: Team; at: number };
+/* ------------------------------------------------------------------ */
+/* Match sources: local bots (offline demo) or the game server         */
+/* ------------------------------------------------------------------ */
+interface MatchSource {
+  frame(dt: number, input: InputState): GameEvent[];
+  view(): MatchView | null;
+}
 
-const spawnX = (team: Team, i: number) => (team === 'red' ? 90 + i * 60 : W - 90 - i * 60);
-
-function makeFighters(profile: { name: string; color: string; accessory: Accessory; weapon: Weapon }): Fighter[] {
-  const roster: { name: string; color: string; accessory: Accessory; weapon: Weapon; team: Team; you?: boolean }[] = [
-    { ...profile, team: 'red', you: true },
-    { ...BOTS[0], team: 'red' },
-    { ...BOTS[1], team: 'red' },
-    { ...BOTS[2], team: 'blue' },
-    { ...BOTS[3], team: 'blue' },
-    { ...BOTS[4], team: 'blue' },
-  ];
-  const idx = { red: 0, blue: 0 };
-  return roster.map((r, id) => {
-    const i = idx[r.team]++;
+class LocalSource implements MatchSource {
+  readonly m: Match;
+  private brains = new Map<string, BotBrain>();
+  private acc = 0;
+  constructor(profile: Profile) {
+    this.m = createMatch('team', [
+      { id: 'me', name: profile.name, color: profile.color, accessory: profile.accessory, weapon: profile.weapon, team: 'red', bot: false },
+      ...BOTS.slice(0, 5).map((b, i) => ({ ...b, id: `bot${i}`, team: i < 2 ? 'red' : 'blue', bot: true })),
+    ]);
+    for (const f of this.m.fighters) if (f.bot) this.brains.set(f.id, newBrain());
+    this.m.fighters[0]!.energy = 60;
+  }
+  frame(dt: number, input: InputState) {
+    const events: GameEvent[] = [];
+    this.acc = Math.min(this.acc + dt, DT * 5);
+    while (this.acc >= DT) {
+      this.acc -= DT;
+      const inputs = { me: takeInput(input) } as Record<string, ReturnType<typeof takeInput>>;
+      for (const f of this.m.fighters) if (f.bot) inputs[f.id] = botInput(this.m, f, this.brains.get(f.id)!);
+      events.push(...stepMatch(this.m, inputs));
+    }
+    return events;
+  }
+  view(): MatchView {
+    const m = this.m;
+    return { mode: m.mode, meId: 'me', fighters: m.fighters, score: m.score, timeLeft: m.timeLeft, intro: m.intro };
+  }
+  result(): MatchResult {
+    const m = this.m;
     return {
-      id,
-      ...r,
-      you: !!r.you,
-      x: spawnX(r.team, i),
-      y: GROUND,
-      vx: 0,
-      vy: 0,
-      facing: r.team === 'red' ? 1 : -1,
-      onGround: true,
-      hp: 100,
-      energy: r.you ? 60 : 0,
-      action: 'none',
-      actionT: 0,
-      hitDone: false,
-      hurtT: 0,
-      koT: 0,
-      kos: 0,
-      falls: 0,
-      damage: 0,
-      aiT: Math.random(),
-      aiMove: 0,
-      cooldown: 0,
+      mode: m.mode,
+      winner: m.winner ?? 'draw',
+      score: { ...m.score },
+      durationSec: Math.round(m.duration - m.timeLeft),
+      players: m.fighters.map((f) => ({
+        id: f.id,
+        name: f.name,
+        team: f.team,
+        color: f.color,
+        accessory: f.accessory,
+        weapon: f.weapon,
+        kos: f.kos,
+        falls: f.falls,
+        damage: Math.round(f.damage),
+        you: f.id === 'me',
+      })),
     };
-  });
+  }
 }
 
 function poseOf(f: Fighter): Pose {
@@ -129,281 +99,128 @@ function poseOf(f: Fighter): Pose {
   return 'idle';
 }
 
-type Input = { left: boolean; right: boolean; jump: boolean; punch: boolean; kick: boolean; block: boolean; super: boolean };
-const emptyInput = (): Input => ({ left: false, right: false, jump: false, punch: false, kick: false, block: false, super: false });
+const emptyInput = (): InputState => ({ left: false, right: false, jump: false, block: false, punch: false, kick: false, super: false });
 
-export default function Play() {
+type Popup = { id: number; x: number; y: number; text: string; at: number; big: boolean; block: boolean };
+type Feed = { id: number; killer: string; victim: string; kTeam: string; vTeam: string; at: number };
+type Wave = { id: number; x: number; y: number; at: number };
+
+function winnerLabel(mode: 'team' | 'ffa', winner: string, nameOf: (id: string) => string) {
+  if (winner === 'draw') return 'Hoà!';
+  if (mode === 'team') return winner === 'red' ? 'Đội Đỏ thắng!' : 'Đội Xanh thắng!';
+  return `${nameOf(winner)} thắng!`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Page                                                                */
+/* ------------------------------------------------------------------ */
+export default function Play({ online = false }: { online?: boolean }) {
   const [, nav] = useLocation();
+  const params = useParams<{ id?: string }>();
   const { profile, settings } = useStore();
 
-  const fighters = useRef<Fighter[]>(makeFighters(profile));
-  const input = useRef<Input>(emptyInput());
+  const netMatch = useNet((s) => s.match);
+  const netResult = useNet((s) => s.result);
+  const netStatus = useNet((s) => s.status);
+  const ping = useNet((s) => s.ping);
+
+  const local = useMemo(() => (online ? null : new LocalSource(profile)), [online]); // eslint-disable-line react-hooks/exhaustive-deps
+  const source: MatchSource | null = online ? netMatch : local;
+
+  const input = useRef<InputState>(emptyInput());
   const popups = useRef<Popup[]>([]);
   const feed = useRef<Feed[]>([]);
-  const shockwaves = useRef<{ id: number; x: number; y: number; at: number }[]>([]);
-  const score = useRef({ red: 0, blue: 0 });
-  const timeLeft = useRef(MATCH_SEC);
-  const intro = useRef(1.6);
-  const ended = useRef(false);
+  const waves = useRef<Wave[]>([]);
   const uid = useRef(1);
-  const clock = useRef(0);
+  const viewRef = useRef<MatchView | null>(null);
 
   const [, setFrame] = useState(0);
   const [paused, setPaused] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
-  const [over, setOver] = useState<null | Team | 'draw'>(null);
+  const [over, setOver] = useState<MatchResult | null>(null);
   const [touch] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches);
-  const pausedRef = useRef(false);
-  pausedRef.current = paused || settingsOpen;
+  const menuOpen = paused || settingsOpen;
+  const menuRef = useRef(menuOpen);
+  menuRef.current = menuOpen;
+  const shakeRef = useRef(settings.shake);
+  shakeRef.current = settings.shake;
 
-  const finish = useCallback(() => {
-    if (ended.current) return;
-    ended.current = true;
-    const s = score.current;
-    const winner: Team | 'draw' = s.red === s.blue ? 'draw' : s.red > s.blue ? 'red' : 'blue';
-    setOver(winner);
-    setLastResult({
-      winner,
-      score: { ...s },
-      durationSec: Math.round(MATCH_SEC - timeLeft.current),
-      players: fighters.current.map((f) => ({
-        name: f.name,
-        team: f.team,
-        color: f.color,
-        accessory: f.accessory,
-        weapon: f.weapon,
-        kos: f.kos,
-        falls: f.falls,
-        damage: Math.round(f.damage),
-        you: f.you,
-      })),
-    });
-    setTimeout(() => nav('/results'), 2200);
-  }, [nav]);
+  /* ---------------- online: follow server state ---------------- */
+  useEffect(() => {
+    if (!online) return;
+    if (netResult && !over) {
+      setOver(netResult);
+      return;
+    }
+    if (!netMatch && !netResult) nav(`/room/${params.id ?? ''}`, { replace: true });
+  }, [online, netMatch, netResult, over, nav, params.id]);
 
-  /* ---------------- simulation step ---------------- */
-  const step = useCallback(
-    (dt: number) => {
-      clock.current += dt;
-      const fs = fighters.current;
-      if (intro.current > 0) {
-        intro.current -= dt;
-        return;
-      }
-      if (ended.current) return;
-
-      timeLeft.current -= dt;
-      if (timeLeft.current <= 0) {
-        timeLeft.current = 0;
-        finish();
-      }
-
-      const startAction = (f: Fighter, a: Exclude<Action, 'none' | 'block'>) => {
-        if (f.action !== 'none' && f.action !== 'block') return;
-        if (f.cooldown > 0 || f.hurtT > 0) return;
-        if (a === 'super') {
-          if (f.energy < 100) return;
-          f.energy = 0;
-          shockwaves.current.push({ id: uid.current++, x: f.x, y: f.y - 45, at: clock.current });
-        }
-        f.action = a;
-        f.actionT = 0;
-        f.hitDone = false;
-      };
-
-      for (const f of fs) {
-        f.cooldown = Math.max(0, f.cooldown - dt);
-        f.hurtT = Math.max(0, f.hurtT - dt);
-
-        if (f.koT > 0) {
-          f.koT -= dt;
-          f.vx *= 0.9;
-          if (f.koT <= 0) {
-            const mates = fs.filter((m) => m.team === f.team);
-            Object.assign(f, {
-              hp: 100,
-              x: spawnX(f.team, mates.indexOf(f)),
-              y: 0,
-              vy: 0,
-              vx: 0,
-              action: 'none',
-              hurtT: 0,
-              onGround: false,
-            });
-          }
-        } else {
-          /* ----- intent: player input or AI ----- */
-          let move = 0;
-          let wantJump = false;
-          let wantBlock = false;
-          if (f.you) {
-            const i = input.current;
-            move = (i.right ? 1 : 0) - (i.left ? 1 : 0);
-            wantJump = i.jump;
-            wantBlock = i.block;
-            if (i.punch) startAction(f, 'punch');
-            if (i.kick) startAction(f, 'kick');
-            if (i.super) startAction(f, 'super');
-            i.punch = i.kick = i.super = false;
-          } else {
-            const foes = fs.filter((o) => o.team !== f.team && o.koT <= 0);
-            const target = foes.sort((a, b) => Math.abs(a.x - f.x) + Math.abs(a.y - f.y) - (Math.abs(b.x - f.x) + Math.abs(b.y - f.y)))[0];
-            f.aiT -= dt;
-            if (target) {
-              const dx = target.x - f.x;
-              const dy = target.y - f.y;
-              if (Math.abs(dx) > 55) move = Math.sign(dx);
-              else f.facing = dx >= 0 ? 1 : -1;
-              if (f.aiT <= 0) {
-                f.aiT = 0.25 + Math.random() * 0.45;
-                f.aiMove = Math.random() < 0.15 ? -Math.sign(dx) : 0;
-                if (dy < -60 && f.onGround && Math.random() < 0.6) wantJump = true;
-                if (Math.abs(dx) < 85 && Math.abs(dy) < 50) {
-                  const r = Math.random();
-                  if (f.energy >= 100 && r < 0.4) startAction(f, 'super');
-                  else if (target.action !== 'none' && target.action !== 'block' && r < 0.3) wantBlock = true;
-                  else if (r < 0.65) startAction(f, 'punch');
-                  else startAction(f, 'kick');
-                }
-              }
-              if (f.aiMove) move = f.aiMove;
-              if (target.action !== 'none' && target.action !== 'block' && Math.abs(dx) < 90 && Math.random() < 0.02) wantBlock = true;
-            }
-          }
-
-          if (wantBlock && f.action === 'none' && f.onGround) f.action = 'block';
-          if (!wantBlock && f.action === 'block' && !f.you) {
-            // AI holds block for a moment
-            if (Math.random() < 0.05) f.action = 'none';
-          } else if (!wantBlock && f.action === 'block') f.action = 'none';
-
-          const busy = f.hurtT > 0 || (f.action !== 'none' && f.action !== 'block');
-          const speed = f.action === 'block' ? SPEED * 0.25 : SPEED;
-          if (!busy) {
-            const targetVx = move * speed;
-            f.vx += (targetVx - f.vx) * Math.min(1, dt * 14);
-            if (move) f.facing = move > 0 ? 1 : -1;
-            if (wantJump && f.onGround) {
-              f.vy = -JUMP;
-              f.onGround = false;
-              if (f.action === 'block') f.action = 'none';
-            }
-          } else {
-            f.vx *= Math.pow(0.02, dt);
-          }
-
-          /* ----- attacks ----- */
-          if (f.action === 'punch' || f.action === 'kick' || f.action === 'super') {
-            const spec = ATTACK[f.action];
-            const mod = WEAPON_MOD[f.weapon];
-            f.actionT += dt;
-            if (!f.hitDone && f.actionT >= spec.hitAt * mod.speed) {
-              f.hitDone = true;
-              for (const o of fs) {
-                if (o.team === f.team || o.koT > 0) continue;
-                const dx = o.x - f.x;
-                const inFront = f.action === 'super' || Math.sign(dx) === f.facing || Math.abs(dx) < 8;
-                if (!inFront || Math.abs(dx) > spec.range + mod.range || Math.abs(o.y - f.y) > 60) continue;
-                const blocked = o.action === 'block' && o.facing === -Math.sign(dx || f.facing) && f.action !== 'super';
-                const dmg = spec.dmg * mod.dmg * (blocked ? 0.2 : 1) * (0.9 + Math.random() * 0.2);
-                o.hp -= dmg;
-                f.damage += dmg;
-                f.energy = Math.min(100, f.energy + dmg * 1.6);
-                o.energy = Math.min(100, o.energy + dmg * 0.6);
-                const dir = Math.sign(dx) || f.facing;
-                if (!blocked) {
-                  o.hurtT = 0.28;
-                  o.action = 'none';
-                  o.vx = dir * spec.knock;
-                  o.vy = f.action === 'super' ? -420 : -160;
-                  o.onGround = false;
-                } else {
-                  o.vx = dir * 90;
-                }
-                popups.current.push({
-                  id: uid.current++,
-                  x: o.x,
-                  y: o.y - 110,
-                  text: blocked ? 'CHẶN!' : f.action === 'super' ? 'SIÊU CẤP!' : HIT_WORDS[Math.floor(Math.random() * HIT_WORDS.length)],
-                  at: clock.current,
-                  big: f.action === 'super',
-                  block: blocked,
-                });
-                if (o.you && !blocked && settings.shake) setShakeKey((k) => k + 1);
-                if (o.hp <= 0) {
-                  o.hp = 0;
-                  o.koT = 3;
-                  o.falls++;
-                  f.kos++;
-                  score.current[f.team]++;
-                  feed.current.unshift({ id: uid.current++, killer: f.name, victim: o.name, kTeam: f.team, vTeam: o.team, at: clock.current });
-                  feed.current = feed.current.slice(0, 5);
-                  if (score.current[f.team] >= WIN_KOS) finish();
-                }
-              }
-            }
-            if (f.actionT >= spec.dur * mod.speed) {
-              f.action = 'none';
-              f.cooldown = spec.cd;
-            }
-          }
-        }
-
-        /* ----- physics ----- */
-        const prevY = f.y;
-        f.vy += GRAVITY * dt;
-        f.x += f.vx * dt;
-        f.y += f.vy * dt;
-        f.onGround = false;
-        if (f.y >= GROUND) {
-          f.y = GROUND;
-          f.vy = 0;
-          f.onGround = true;
-        } else if (f.vy > 0) {
-          for (const p of PLATFORMS) {
-            if (prevY <= p.y && f.y >= p.y && f.x >= p.x1 && f.x <= p.x2) {
-              f.y = p.y;
-              f.vy = 0;
-              f.onGround = true;
-            }
-          }
-        }
-        if (f.x < 30) {
-          f.x = 30;
-          f.vx = Math.abs(f.vx) * 0.3;
-        }
-        if (f.x > W - 30) {
-          f.x = W - 30;
-          f.vx = -Math.abs(f.vx) * 0.3;
-        }
-      }
-
-      popups.current = popups.current.filter((p) => clock.current - p.at < 0.9).slice(-12);
-      shockwaves.current = shockwaves.current.filter((s) => clock.current - s.at < 0.6);
-    },
-    [finish, settings.shake],
-  );
+  // after the "KẾT THÚC" banner, go to results
+  useEffect(() => {
+    if (!over) return;
+    setLastResult(over);
+    const t = setTimeout(() => nav('/results'), 2200);
+    return () => clearTimeout(t);
+  }, [over, nav]);
 
   /* ---------------- main loop ---------------- */
   useEffect(() => {
+    if (!source) return;
     let raf = 0;
     let last = performance.now();
     const loop = (now: number) => {
-      const dt = Math.min(0.033, (now - last) / 1000);
+      const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (!pausedRef.current) step(dt);
+      const clock = now / 1000;
+      // Offline: the menu pauses the game. Online: the server keeps going, we just stop sending keys.
+      if (!(menuRef.current && !online)) {
+        const events = source.frame(dt, menuRef.current ? emptyInput() : input.current);
+        const v = source.view();
+        viewRef.current = v;
+        if (v) handleEvents(events, v, clock);
+        if (local?.m.ended && !over) setOver(local.result());
+      }
+      popups.current = popups.current.filter((p) => clock - p.at < 0.9);
+      waves.current = waves.current.filter((w) => clock - w.at < 0.6);
+      feed.current = feed.current.filter((f) => clock - f.at < 6);
       setFrame((n) => (n + 1) % 1_000_000);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [step]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, online]);
+
+  function handleEvents(events: GameEvent[], v: MatchView, clock: number) {
+    const byId = (id: string) => v.fighters.find((f) => f.id === id);
+    for (const e of events) {
+      if (e.k === 'hit') {
+        popups.current.push({
+          id: uid.current++,
+          x: e.x,
+          y: e.y,
+          at: clock,
+          big: e.big,
+          block: e.blocked,
+          text: e.blocked ? 'CHẶN!' : e.big ? 'SIÊU CẤP!' : HIT_WORDS[Math.floor(Math.random() * HIT_WORDS.length)]!,
+        });
+        if (e.v === v.meId && !e.blocked && shakeRef.current) setShakeKey((k) => k + 1);
+      } else if (e.k === 'ko') {
+        const a = byId(e.a);
+        const b = byId(e.v);
+        feed.current.unshift({ id: uid.current++, killer: a?.name ?? '?', victim: b?.name ?? '?', kTeam: a?.team ?? '', vTeam: b?.team ?? '', at: clock });
+        feed.current = feed.current.slice(0, 5);
+      } else if (e.k === 'super') {
+        waves.current.push({ id: uid.current++, x: e.x, y: e.y, at: clock });
+      }
+    }
+  }
 
   /* ---------------- keyboard ---------------- */
   useEffect(() => {
-    const map: Record<string, keyof Input> = {
+    const map: Record<string, keyof InputState> = {
       KeyA: 'left',
       ArrowLeft: 'left',
       KeyD: 'right',
@@ -416,6 +233,7 @@ export default function Play() {
       KeyL: 'block',
       KeyQ: 'super',
     };
+    const oneShot = (k: keyof InputState) => k === 'punch' || k === 'kick' || k === 'super';
     const down = (e: KeyboardEvent) => {
       if (e.code === 'Tab') {
         e.preventDefault();
@@ -426,16 +244,17 @@ export default function Play() {
         setPaused((p) => !p);
         return;
       }
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       const k = map[e.code];
       if (!k) return;
       e.preventDefault();
-      if (e.repeat && (k === 'punch' || k === 'kick' || k === 'super')) return;
+      if (e.repeat && oneShot(k)) return;
       input.current[k] = true;
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === 'Tab') setShowBoard(false);
       const k = map[e.code];
-      if (k && k !== 'punch' && k !== 'kick' && k !== 'super') input.current[k] = false;
+      if (k && !oneShot(k)) input.current[k] = false;
     };
     const blur = () => (input.current = emptyInput());
     window.addEventListener('keydown', down);
@@ -448,42 +267,65 @@ export default function Play() {
     };
   }, []);
 
-  const press = (k: keyof Input, v = true) => () => {
+  const press = (k: keyof InputState, v = true) => () => {
     input.current[k] = v;
   };
 
-  const fs = fighters.current;
-  const me = fs.find((f) => f.you)!;
-  const s = score.current;
+  const leave = () => {
+    if (online) net.send({ t: 'leave' });
+    nav('/lobby');
+  };
+
+  const v = viewRef.current;
+  const clock = performance.now() / 1000;
+
+  if (!v) {
+    return (
+      <div className="grid min-h-dvh place-items-center p-6 text-center">
+        <div>
+          <div className="font-display text-3xl">{netStatus === 'open' ? 'Đang tải trận…' : 'Đang kết nối lại máy chủ…'}</div>
+          <Button className="mt-6" onClick={leave}>
+            Về sảnh
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const me = v.fighters.find((f) => f.id === v.meId);
+  const nameOf = (id: string) => v.fighters.find((f) => f.id === id)?.name ?? over?.players.find((p) => p.id === id)?.name ?? '?';
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-2 py-3 select-none">
       {/* ---------- top HUD ---------- */}
       <div className="flex w-full max-w-[1100px] flex-wrap items-start justify-between gap-2 sm:flex-nowrap sm:gap-3">
-        <div className="order-2 w-full sm:order-1 sm:w-auto sm:flex-1">
-          <PlayerCard f={me} />
-        </div>
+        <div className="order-2 w-full sm:order-1 sm:w-auto sm:flex-1">{me && <PlayerCard f={me} />}</div>
         <div className="order-1 flex flex-col items-center gap-1 sm:order-2">
           <div className="flex items-stretch">
-            <TeamScore team="red" value={s.red} />
+            {v.mode === 'team' && <TeamScore team="red" value={v.score.red ?? 0} />}
             <div className="sk z-10 -mx-1 bg-paper-3 px-2.5 py-1 text-center shadow-ink-sm sm:px-4">
-              <div className={cn('font-display text-2xl tabular-nums', timeLeft.current < 30 && 'text-crimson')}>{formatTime(timeLeft.current)}</div>
+              <div className={cn('font-display text-2xl tabular-nums', v.timeLeft < 30 && 'text-crimson')}>{formatTime(v.timeLeft)}</div>
             </div>
-            <TeamScore team="blue" value={s.blue} />
+            {v.mode === 'team' && <TeamScore team="blue" value={v.score.blue ?? 0} />}
           </div>
-          <div className="hidden text-sm text-ink-soft sm:block">Đầu tiên đạt {WIN_KOS} K.O thắng</div>
+          <div className="hidden text-sm text-ink-soft sm:block">
+            {v.mode === 'team' ? `Đội đầu tiên đạt ${winScore('team')} K.O thắng` : `Hỗn chiến · ai đạt ${winScore('ffa')} K.O trước thắng`}
+          </div>
         </div>
         <div className="order-1 flex items-start justify-end gap-2 sm:order-3 sm:flex-1">
-          <KillFeed items={feed.current} now={clock.current} />
+          <KillFeed items={feed.current} />
+          {online && (
+            <span className={cn('sk hidden items-center gap-1 bg-paper-3 px-2 py-1 text-sm tabular-nums sm:inline-flex', netStatus !== 'open' && 'text-crimson')}>
+              <Wifi size={14} strokeWidth={3} /> {netStatus === 'open' ? `${ping ?? '–'}ms` : 'mất kết nối'}
+            </span>
+          )}
           <IconButton aria-label="Tạm dừng" onClick={() => setPaused(true)}>
             <Pause size={18} strokeWidth={3} />
           </IconButton>
         </div>
       </div>
 
-      {touch && (
-        <p className="text-center text-sm text-ink-soft landscape:hidden">↻ Xoay ngang điện thoại để chơi thoải mái hơn</p>
-      )}
+      {touch && <p className="text-center text-sm text-ink-soft landscape:hidden">↻ Xoay ngang điện thoại để chơi thoải mái hơn</p>}
 
       {/* ---------- arena ---------- */}
       <div
@@ -492,8 +334,8 @@ export default function Play() {
         style={{ width: 'min(100%, 1100px, calc((100dvh - 230px) * 1000 / 560))', aspectRatio: `${W} / ${H}` }}
       >
         <ArenaBackdrop />
-        {shockwaves.current.map((w) => {
-          const t = (clock.current - w.at) / 0.6;
+        {waves.current.map((w) => {
+          const t = (clock - w.at) / 0.6;
           return (
             <span
               key={w.id}
@@ -509,8 +351,8 @@ export default function Play() {
             />
           );
         })}
-        {fs.map((f) => (
-          <FighterView key={f.id} f={f} />
+        {v.fighters.map((f) => (
+          <FighterView key={f.id} f={f} you={f.id === v.meId} mode={v.mode} />
         ))}
         {settings.damageNumbers &&
           popups.current.map((p) => (
@@ -523,14 +365,14 @@ export default function Play() {
             </div>
           ))}
 
-        {intro.current > 0 && (
+        {v.intro > 0 && !over && (
           <div className="absolute inset-0 grid place-items-center bg-ink/10">
-            <div key={intro.current > 0.6 ? 'a' : 'b'} className="anim-rise font-display text-5xl text-marker title-stroke sm:text-7xl">
-              {intro.current > 0.6 ? 'SẴN SÀNG…' : 'ĐÁNH!'}
+            <div key={v.intro > 0.6 ? 'a' : 'b'} className="anim-rise font-display text-5xl text-marker title-stroke sm:text-7xl">
+              {v.intro > 0.6 ? 'SẴN SÀNG…' : 'ĐÁNH!'}
             </div>
           </div>
         )}
-        {me.koT > 0 && !over && (
+        {me && me.koT > 0 && !over && (
           <div className="absolute inset-x-0 top-1/3 text-center">
             <div className="font-display text-3xl text-crimson title-stroke sm:text-5xl">BẠN BỊ HẠ!</div>
             <div className="mt-2 text-xl">Hồi sinh sau {Math.ceil(me.koT)}…</div>
@@ -540,13 +382,23 @@ export default function Play() {
           <div className="absolute inset-0 grid place-items-center bg-ink/30">
             <div className="anim-rise text-center">
               <div className="font-display text-6xl text-paper-3 title-stroke sm:text-8xl">KẾT THÚC</div>
-              <div className={cn('mt-2 font-display text-2xl title-stroke', over === 'red' ? 'text-crimson' : over === 'blue' ? 'text-cobalt' : 'text-marker')}>
-                {over === 'draw' ? 'Hoà!' : over === 'red' ? 'Đội Đỏ thắng!' : 'Đội Xanh thắng!'}
+              <div
+                className={cn(
+                  'mt-2 font-display text-2xl title-stroke',
+                  over.winner === 'red' ? 'text-crimson' : over.winner === 'blue' ? 'text-cobalt' : 'text-marker',
+                )}
+              >
+                {winnerLabel(over.mode, over.winner, nameOf)}
               </div>
             </div>
           </div>
         )}
-        {showBoard && <Scoreboard fighters={fs} />}
+        {online && netStatus !== 'open' && !over && (
+          <div className="absolute inset-x-0 top-3 text-center">
+            <span className="sk bg-crimson px-3 py-1 text-on-accent">Mất kết nối máy chủ…</span>
+          </div>
+        )}
+        {showBoard && <Scoreboard fighters={v.fighters} meId={v.meId} mode={v.mode} />}
       </div>
 
       {/* ---------- bottom HUD: skills + touch pad ---------- */}
@@ -568,23 +420,26 @@ export default function Play() {
             <Kbd>A</Kbd> <Kbd>D</Kbd> di chuyển · <Kbd>W</Kbd> nhảy · giữ <Kbd>Tab</Kbd> xem điểm
           </div>
         )}
-        <div className="flex gap-2 sm:gap-3">
-          <SkillButton k="J" label="Đấm" cd={me.action === 'punch' ? 1 : me.cooldown / ATTACK.punch.cd} onDown={press('punch')} />
-          <SkillButton k="K" label="Đá" cd={me.action === 'kick' ? 1 : me.cooldown / ATTACK.kick.cd} onDown={press('kick')} />
-          <SkillButton k="L" label="Đỡ" active={me.action === 'block'} onDown={press('block')} onUp={press('block', false)} />
-          <SkillButton k="Q" label="Tuyệt chiêu" charge={me.energy / 100} onDown={press('super')} ultimate />
-        </div>
+        {me && (
+          <div className="flex gap-2 sm:gap-3">
+            <SkillButton k="J" label="Đấm" cd={me.action === 'punch' ? 1 : me.cooldown / ATTACK.punch.cd} onDown={press('punch')} />
+            <SkillButton k="K" label="Đá" cd={me.action === 'kick' ? 1 : me.cooldown / ATTACK.kick.cd} onDown={press('kick')} />
+            <SkillButton k="L" label="Đỡ" active={me.action === 'block'} onDown={press('block')} onUp={press('block', false)} />
+            <SkillButton k="Q" label="Tuyệt chiêu" charge={me.energy / 100} onDown={press('super')} ultimate />
+          </div>
+        )}
       </div>
 
-      <Modal open={paused && !settingsOpen} onClose={() => setPaused(false)} title="Tạm dừng">
+      <Modal open={paused && !settingsOpen} onClose={() => setPaused(false)} title={online ? 'Menu' : 'Tạm dừng'}>
         <div className="grid gap-3">
+          {online && <p className="text-ink-soft">Trận online vẫn tiếp tục trong lúc bạn mở menu.</p>}
           <Button variant="green" size="lg" onClick={() => setPaused(false)}>
             Tiếp tục
           </Button>
           <Button size="lg" onClick={() => setSettingsOpen(true)}>
             Cài đặt
           </Button>
-          <Button variant="red" size="lg" onClick={() => nav('/lobby')}>
+          <Button variant="red" size="lg" onClick={leave}>
             Rời trận
           </Button>
           <div className="mt-2 border-t-2 border-dashed border-ink/30 pt-3">
@@ -632,10 +487,12 @@ function ArenaBackdrop() {
   );
 }
 
-function FighterView({ f }: { f: Fighter }) {
+const teamColor = (mode: 'team' | 'ffa', team: string, color: string) =>
+  mode === 'ffa' ? color : team === 'red' ? 'var(--crimson)' : 'var(--cobalt)';
+
+function FighterView({ f, you, mode }: { f: Fighter; you: boolean; mode: 'team' | 'ffa' }) {
   const fw = 140 * FIG_K;
   const fh = 130 * FIG_K;
-  const teamColor = f.team === 'red' ? 'var(--crimson)' : 'var(--cobalt)';
   return (
     <div
       className="absolute"
@@ -649,8 +506,8 @@ function FighterView({ f }: { f: Fighter }) {
     >
       {f.koT <= 0 && (
         <div className="absolute -top-[18%] left-1/2 w-[70%] -translate-x-1/2 text-center">
-          <div className="truncate text-[clamp(9px,1.2vw,14px)] leading-none font-bold" style={{ color: teamColor }}>
-            {f.you ? '▼ ' : ''}
+          <div className="truncate text-[clamp(9px,1.2vw,14px)] leading-none font-bold" style={{ color: teamColor(mode, f.team, f.color) }}>
+            {you ? '▼ ' : ''}
             {f.name}
           </div>
           <div className="mt-0.5 h-[5px] overflow-hidden rounded-full border-[1.5px] border-ink bg-paper-2">
@@ -664,7 +521,7 @@ function FighterView({ f }: { f: Fighter }) {
         color={f.color}
         accessory={f.accessory}
         weapon={f.weapon}
-        phase={f.id * 0.37}
+        phase={(f.id.charCodeAt(f.id.length - 1) % 7) * 0.37}
         className="h-full w-full"
       />
     </div>
@@ -693,12 +550,12 @@ function PlayerCard({ f }: { f: Fighter }) {
   );
 }
 
-function TeamScore({ team, value }: { team: Team; value: number }) {
+function TeamScore({ team, value }: { team: 'red' | 'blue'; value: number }) {
   const red = team === 'red';
   return (
     <div
       className={cn(
-        'flex min-w-14 flex-col sm:min-w-20 items-center justify-center border-[2.5px] border-ink px-3 py-0.5 text-on-accent',
+        'flex min-w-14 flex-col items-center justify-center border-[2.5px] border-ink px-3 py-0.5 text-on-accent sm:min-w-20',
         red ? 'rounded-l-[12px] bg-crimson' : 'rounded-r-[12px] bg-cobalt',
       )}
     >
@@ -708,18 +565,18 @@ function TeamScore({ team, value }: { team: Team; value: number }) {
   );
 }
 
-function KillFeed({ items, now }: { items: Feed[]; now: number }) {
+const feedColor = (team: string) => (team === 'red' ? 'text-crimson' : team === 'blue' ? 'text-cobalt' : '');
+
+function KillFeed({ items }: { items: Feed[] }) {
   return (
     <ul className="hidden w-60 space-y-1 md:block" aria-live="polite">
-      {items
-        .filter((k) => now - k.at < 6)
-        .map((k) => (
-          <li key={k.id} className="anim-slide-in sk flex items-center justify-end gap-1.5 bg-paper-3/90 px-2 py-0.5 text-sm">
-            <b className={k.kTeam === 'red' ? 'text-crimson' : 'text-cobalt'}>{k.killer}</b>
-            <span aria-label="hạ gục">👊</span>
-            <span className={cn('line-through decoration-2', k.vTeam === 'red' ? 'text-crimson' : 'text-cobalt')}>{k.victim}</span>
-          </li>
-        ))}
+      {items.map((k) => (
+        <li key={k.id} className="anim-slide-in sk flex items-center justify-end gap-1.5 bg-paper-3/90 px-2 py-0.5 text-sm">
+          <b className={cn('truncate', feedColor(k.kTeam))}>{k.killer}</b>
+          <span aria-label="hạ gục">👊</span>
+          <span className={cn('truncate line-through decoration-2', feedColor(k.vTeam))}>{k.victim}</span>
+        </li>
+      ))}
     </ul>
   );
 }
@@ -744,17 +601,14 @@ function SkillButton({
   onUp?: () => void;
 }) {
   const ready = charge === undefined ? cd <= 0 : charge >= 1;
-  const handlers = {
-    onPointerDown: (e: RPointerEvent) => {
-      e.preventDefault();
-      onDown();
-    },
-    onPointerUp: onUp,
-    onPointerLeave: onUp,
-  };
   return (
     <button
-      {...handlers}
+      onPointerDown={(e: RPointerEvent) => {
+        e.preventDefault();
+        onDown();
+      }}
+      onPointerUp={onUp}
+      onPointerLeave={onUp}
       aria-label={label}
       className={cn(
         'sk relative grid h-14 w-14 touch-none place-items-center overflow-hidden bg-paper-3 shadow-ink-sm transition-transform sm:h-[72px] sm:w-[72px]',
@@ -778,7 +632,7 @@ function TouchBtn({ children, label, onDown, onUp }: { children: ReactNode; labe
   return (
     <button
       aria-label={label}
-      className="sk grid h-14 w-14 touch-none sm:h-16 sm:w-16 place-items-center bg-paper-3 shadow-ink-sm active:translate-y-0.5 active:bg-marker"
+      className="sk grid h-14 w-14 touch-none place-items-center bg-paper-3 shadow-ink-sm active:translate-y-0.5 active:bg-marker sm:h-16 sm:w-16"
       onPointerDown={(e) => {
         e.preventDefault();
         onDown();
@@ -792,29 +646,38 @@ function TouchBtn({ children, label, onDown, onUp }: { children: ReactNode; labe
   );
 }
 
-function Scoreboard({ fighters }: { fighters: Fighter[] }) {
+function Scoreboard({ fighters, meId, mode }: { fighters: Fighter[]; meId: string; mode: 'team' | 'ffa' }) {
+  const groups: { key: string; label: string; cls: string; list: Fighter[] }[] =
+    mode === 'team'
+      ? [
+          { key: 'red', label: 'ĐỘI ĐỎ', cls: 'text-crimson', list: fighters.filter((f) => f.team === 'red') },
+          { key: 'blue', label: 'ĐỘI XANH', cls: 'text-cobalt', list: fighters.filter((f) => f.team === 'blue') },
+        ]
+      : [{ key: 'all', label: 'NGƯỜI CHƠI', cls: '', list: fighters }];
   return (
     <div className="absolute inset-0 grid place-items-center bg-ink/30 p-4">
       <div className="sk shadow-ink-lg w-full max-w-xl bg-paper-3 p-4">
         <h2 className="mb-3 text-center font-display text-xl">Bảng điểm</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {(['red', 'blue'] as Team[]).map((t) => (
-            <table key={t} className="w-full">
+        <div className={cn('grid gap-4', groups.length > 1 && 'sm:grid-cols-2')}>
+          {groups.map((g) => (
+            <table key={g.key} className="w-full">
               <thead>
-                <tr className={cn('font-display text-xs', t === 'red' ? 'text-crimson' : 'text-cobalt')}>
-                  <th className="text-left">{t === 'red' ? 'ĐỘI ĐỎ' : 'ĐỘI XANH'}</th>
+                <tr className={cn('font-display text-xs', g.cls)}>
+                  <th className="text-left">{g.label}</th>
                   <th className="w-10">K.O</th>
                   <th className="w-10">Gục</th>
                   <th className="w-12">ST</th>
                 </tr>
               </thead>
               <tbody>
-                {fighters
-                  .filter((f) => f.team === t)
+                {[...g.list]
                   .sort((a, b) => b.kos - a.kos)
                   .map((f) => (
-                    <tr key={f.id} className={cn('border-t-2 border-dashed border-ink/20', f.you && 'hl')}>
-                      <td className="max-w-0 truncate py-0.5">{f.name}</td>
+                    <tr key={f.id} className={cn('border-t-2 border-dashed border-ink/20', f.id === meId && 'hl')}>
+                      <td className="max-w-0 truncate py-0.5">
+                        {f.name}
+                        {f.bot && <span className="text-ink-soft"> (bot)</span>}
+                      </td>
                       <td className="text-center tabular-nums">{f.kos}</td>
                       <td className="text-center tabular-nums">{f.falls}</td>
                       <td className="text-center tabular-nums">{Math.round(f.damage)}</td>

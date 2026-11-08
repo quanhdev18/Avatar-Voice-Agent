@@ -183,10 +183,13 @@ importers:
         version: 4.44.1(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@livekit/agents':
         specifier: ^1.9.5
-        version: 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5)
+        version: 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76)
       '@livekit/agents-plugin-google':
         specifier: ^1.9.5
-        version: 1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5))(@livekit/rtc-node@1.2.1)(ws@8.22.1)(zod@4.6.5)
+        version: 1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76))(@livekit/rtc-node@1.2.1)(ws@8.22.1)(zod@3.25.76)
+      '@livekit/protocol':
+        specifier: 1.51.0
+        version: 1.51.0
       '@livekit/rtc-node':
         specifier: ^1.2.1
         version: 1.2.1
@@ -196,6 +199,9 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/game-core':
+        specifier: workspace:*
+        version: link:../../lib/game-core
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -220,6 +226,12 @@ importers:
       pino-http:
         specifier: ^10.5.0
         version: 10.5.0
+      ws:
+        specifier: ^8.22.1
+        version: 8.22.1
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
     devDependencies:
       '@types/cookie-parser':
         specifier: ^1.4.10
@@ -233,6 +245,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.9.9
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.2
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -650,6 +665,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: 'catalog:'
         version: 5.2.0(vite@7.3.7(@types/node@25.9.9)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@workspace/game-core':
+        specifier: workspace:*
+        version: link:../../lib/game-core
       clsx:
         specifier: 'catalog:'
         version: 2.1.1
@@ -717,6 +735,12 @@ importers:
       drizzle-kit:
         specifier: ^0.31.11
         version: 0.31.11
+
+  lib/game-core:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
 
   scripts:
     devDependencies:
@@ -2383,6 +2407,9 @@ packages:
 
   '@types/serve-static@2.2.0':
     resolution: {integrity: sha512-8mam4H1NHLtu7nmtalF7eyBH14QyOASmcxHhSfEoRyr0nP/YdoesEtU+uSRvMe96TW/HPTtkoKqQLl53N7UXMQ==}
+
+  '@types/ws@8.18.2':
+    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
 
   '@vitejs/plugin-react@5.2.0':
     resolution: {integrity: sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw==}
@@ -4490,16 +4517,16 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@livekit/agents-plugin-google@1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5))(@livekit/rtc-node@1.2.1)(ws@8.22.1)(zod@4.6.5)':
+  '@livekit/agents-plugin-google@1.9.5(@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76))(@livekit/rtc-node@1.2.1)(ws@8.22.1)(zod@3.25.76)':
     dependencies:
       '@google/genai': 2.32.0
-      '@livekit/agents': 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5)
+      '@livekit/agents': 1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76)
       '@livekit/mutex': 1.1.1
       '@livekit/rtc-node': 1.2.1
       '@types/json-schema': 7.0.15
       google-auth-library: 10.9.1
       json-schema: 0.4.0
-      openai: 6.49.0(ws@8.22.1)(zod@4.6.5)
+      openai: 6.49.0(ws@8.22.1)(zod@3.25.76)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -4511,7 +4538,7 @@ snapshots:
       - ws
       - zod
 
-  '@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@4.6.5)':
+  '@livekit/agents@1.9.5(@livekit/rtc-node@1.2.1)(@types/node@25.9.9)(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@bufbuild/protobuf': 1.10.1
       '@livekit/av': 10.1.0
@@ -4545,14 +4572,14 @@ snapshots:
       jsonrepair: 3.15.0
       livekit-server-sdk: 2.19.2
       ofetch: 1.5.1
-      openai: 6.49.0(ws@8.22.1)(zod@4.6.5)
+      openai: 6.49.0(ws@8.22.1)(zod@3.25.76)
       pidusage: 4.1.0
       pino: 8.21.0
       pino-pretty: 11.3.0
       sharp: 0.35.5(@types/node@25.9.9)
       ws: 8.22.1
-      zod: 4.6.5
-      zod-to-json-schema: 3.25.2(zod@4.6.5)
+      zod: 3.25.76
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -5894,6 +5921,10 @@ snapshots:
       '@types/http-errors': 2.0.5
       '@types/node': 25.9.9
 
+  '@types/ws@8.18.2':
+    dependencies:
+      '@types/node': 25.9.9
+
   '@vitejs/plugin-react@5.2.0(vite@7.3.7(@types/node@25.9.9)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       '@babel/core': 7.29.7
@@ -6745,10 +6776,10 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.49.0(ws@8.22.1)(zod@4.6.5):
+  openai@6.49.0(ws@8.22.1)(zod@3.25.76):
     optionalDependencies:
       ws: 8.22.1
-      zod: 4.6.5
+      zod: 3.25.76
 
   orval@8.41.0(@tanstack/react-query@5.104.1(react@19.1.0))(prettier@3.9.10)(swr@2.3.4(react@19.1.0))(typescript@5.9.3)(zod@4.6.5):
     dependencies:
@@ -7518,9 +7549,9 @@ snapshots:
 
   yoctocolors@2.2.0: {}
 
-  zod-to-json-schema@3.25.2(zod@4.6.5):
+  zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
-      zod: 4.6.5
+      zod: 3.25.76
 
   zod@3.25.76: {}
 

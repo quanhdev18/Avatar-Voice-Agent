@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
-import { Coins, Moon, Settings as SettingsIcon, Sun } from 'lucide-react';
+import { Coins, Moon, Settings as SettingsIcon, Sun, Wifi, WifiOff } from 'lucide-react';
 
 import { Head, IconButton, Kbd, Modal, Slider, Tabs, Toggle } from '@/components/ui';
 import { useStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import { useNet } from '@/net/client';
 
 const NAV = [
   { href: '/', label: 'Trang chủ' },
@@ -58,6 +59,7 @@ export function TopBar() {
             })}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <NetBadge />
             <span className="sk hidden items-center gap-1.5 bg-paper-3 px-2.5 py-1 sm:inline-flex">
               <Coins size={16} className="text-marker" strokeWidth={3} />
               <span className="tabular-nums">{profile.coins.toLocaleString('vi-VN')}</span>
@@ -179,5 +181,40 @@ export function ControlsList() {
         </li>
       ))}
     </ul>
+  );
+}
+
+export function NetBadge() {
+  const status = useNet((s) => s.status);
+  const ping = useNet((s) => s.ping);
+  const online = status === 'open';
+  return (
+    <span
+      className={cn('sk inline-flex items-center gap-1 px-2 py-1 text-sm', online ? 'bg-paper-3' : 'bg-crimson text-on-accent')}
+      title={online ? 'Đã kết nối máy chủ' : 'Chưa kết nối máy chủ'}
+    >
+      {online ? <Wifi size={15} strokeWidth={3} className="text-mint" /> : <WifiOff size={15} strokeWidth={3} />}
+      <span className="hidden tabular-nums lg:inline">{online ? (ping != null ? `${ping}ms` : 'Online') : status === 'connecting' ? 'Đang nối…' : 'Offline'}</span>
+    </span>
+  );
+}
+
+/** Shows server error messages for a few seconds. */
+export function Toasts() {
+  const error = useNet((s) => s.error);
+  const [shown, setShown] = useState<typeof error>(null);
+  useEffect(() => {
+    if (!error) return;
+    setShown(error);
+    const t = setTimeout(() => setShown(null), 3200);
+    return () => clearTimeout(t);
+  }, [error]);
+  if (!shown) return null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4" role="status" aria-live="polite">
+      <div key={shown.at} className="sk shadow-ink anim-rise bg-marker px-4 py-2 text-lg text-on-marker">
+        {shown.message}
+      </div>
+    </div>
   );
 }

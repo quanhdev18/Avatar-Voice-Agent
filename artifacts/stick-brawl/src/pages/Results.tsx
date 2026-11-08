@@ -12,15 +12,17 @@ function sampleResult(name: string, color: string): MatchResult {
   const teams = ['red', 'red', 'red', 'blue', 'blue', 'blue'] as const;
   const kos = [4, 3, 3, 2, 2, 1];
   return {
+    mode: 'team',
     winner: 'red',
     score: { red: 10, blue: 5 },
     durationSec: 142,
     players: [{ name, color, accessory: 'headband' as const, weapon: 'none' as const }, ...BOTS.slice(0, 5)].map((p, i) => ({
       ...p,
-      team: teams[i],
-      kos: kos[i],
-      falls: [1, 2, 2, 4, 3, 3][i],
-      damage: [412, 355, 330, 260, 240, 190][i],
+      id: `p${i}`,
+      team: teams[i]!,
+      kos: kos[i]!,
+      falls: [1, 2, 2, 4, 3, 3][i]!,
+      damage: [412, 355, 330, 260, 240, 190][i]!,
       you: i === 0,
     })),
   };
@@ -34,7 +36,9 @@ export default function Results() {
   const mvp = ranked[0];
   const podium = [ranked[1], ranked[0], ranked[2]].filter(Boolean);
   const me = r.players.find((p) => p.you);
-  const won = me && r.winner === me.team;
+  const won = !!me && (r.mode === 'team' ? r.winner === me.team : r.winner === me.id);
+  const winnerName = r.players.find((p) => p.id === r.winner)?.name;
+  const online = !!r.roomId;
   const xpGain = 120 + (me?.kos ?? 0) * 25 + (won ? 80 : 0);
   const coinGain = 40 + (me?.kos ?? 0) * 10 + (won ? 50 : 0);
 
@@ -52,11 +56,15 @@ export default function Results() {
         >
           {r.winner === 'draw' ? 'HOÀ!' : won ? 'CHIẾN THẮNG!' : 'THUA RỒI…'}
         </h1>
-        <div className="mt-3 inline-flex items-center gap-3 font-display text-3xl">
-          <span className="text-crimson">{r.score.red}</span>
-          <span className="text-ink-soft">–</span>
-          <span className="text-cobalt">{r.score.blue}</span>
-        </div>
+        {r.mode === 'team' ? (
+          <div className="mt-3 inline-flex items-center gap-3 font-display text-3xl">
+            <span className="text-crimson">{r.score.red ?? 0}</span>
+            <span className="text-ink-soft">–</span>
+            <span className="text-cobalt">{r.score.blue ?? 0}</span>
+          </div>
+        ) : (
+          <p className="mt-3 text-xl">{winnerName ? <>Người thắng hỗn chiến: <b className="hl">{winnerName}</b></> : 'Không ai vượt lên được'}</p>
+        )}
       </div>
 
       {/* podium */}
@@ -109,7 +117,10 @@ export default function Results() {
                   <td className="py-1.5 font-display text-sm">{i + 1}</td>
                   <td>
                     <span className="flex items-center gap-2">
-                      <span className={cn('h-3 w-3 shrink-0 rounded-full border-2 border-ink', p.team === 'red' ? 'bg-crimson' : 'bg-cobalt')} />
+                      <span
+                        className="h-3 w-3 shrink-0 rounded-full border-2 border-ink"
+                        style={{ background: r.mode === 'ffa' ? p.color : p.team === 'red' ? 'var(--crimson)' : 'var(--cobalt)' }}
+                      />
                       <span className="truncate">{p.name}</span>
                       {p === mvp && <Badge tone="yellow" className="text-xs">MVP</Badge>}
                       {p.you && <Badge className="text-xs">Bạn</Badge>}
@@ -137,8 +148,8 @@ export default function Results() {
             <Bar className="mt-4" label={`Cấp ${profile.level} → ${profile.level + 1}`} value={Math.min(1000, profile.xp + xpGain)} max={1000} showValue color="var(--cobalt)" />
           </Panel>
           <div className="grid grid-cols-2 gap-4">
-            <Button variant="red" size="lg" onClick={() => nav('/play')}>
-              <RotateCcw size={18} strokeWidth={3} /> Đấu lại
+            <Button variant="red" size="lg" onClick={() => nav(online ? `/room/${r.roomId}` : '/play')}>
+              <RotateCcw size={18} strokeWidth={3} /> {online ? 'Về phòng' : 'Đấu lại'}
             </Button>
             <Button variant="blue" size="lg" onClick={() => nav('/lobby')}>
               <Users size={18} strokeWidth={3} /> Về sảnh

@@ -3,16 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { Accessory, Weapon } from '@/components/StickFigure';
 import { readStorage, writeStorage } from '@/lib/utils';
 
-export const FIGHTER_COLORS = [
-  { name: 'Mực', value: 'var(--ink)' },
-  { name: 'Đỏ', value: 'var(--crimson)' },
-  { name: 'Xanh', value: 'var(--cobalt)' },
-  { name: 'Lá', value: 'var(--mint)' },
-  { name: 'Tím', value: 'var(--violet)' },
-  { name: 'Cam', value: '#f2802e' },
-  { name: 'Hồng', value: '#e858a8' },
-  { name: 'Ngọc', value: '#14a3a8' },
-];
+export { FIGHTER_COLORS } from '@workspace/game-core';
 
 export type Profile = {
   name: string;
@@ -83,13 +74,19 @@ export function useStore() {
   return ctx;
 }
 
-/* Result of the last local match, handed from /play to /results. */
+/* Result of the last match (local or online), handed from Play to Results. */
 export type MatchResult = {
-  winner: 'red' | 'blue' | 'draw';
-  score: { red: number; blue: number };
+  mode: 'team' | 'ffa';
+  /** team id in team mode, player id in free-for-all, or 'draw' */
+  winner: string;
+  score: Record<string, number>;
+  durationSec: number;
+  /** set for online matches: the room to go back to */
+  roomId?: string;
   players: {
+    id: string;
     name: string;
-    team: 'red' | 'blue';
+    team: string;
     color: string;
     accessory: Accessory;
     weapon: Weapon;
@@ -98,7 +95,6 @@ export type MatchResult = {
     damage: number;
     you?: boolean;
   }[];
-  durationSec: number;
 };
 
 let lastResult: MatchResult | null = null;

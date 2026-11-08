@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { ACCESSORIES as CORE_ACCESSORIES, WEAPONS as CORE_WEAPONS, type Accessory, type Weapon } from '@workspace/game-core';
+
 
 export type Pose =
   | 'idle'
@@ -12,12 +14,11 @@ export type Pose =
   | 'victory'
   | 'taunt';
 
-export type Accessory = 'none' | 'headband' | 'cap' | 'crown' | 'ninja' | 'horns' | 'halo';
-export type Weapon = 'none' | 'sword' | 'staff' | 'hammer';
+export type { Accessory, Weapon };
 
 export const POSES: Pose[] = ['idle', 'run', 'punch', 'kick', 'jump', 'block', 'hurt', 'ko', 'victory', 'taunt'];
-export const ACCESSORIES: Accessory[] = ['none', 'headband', 'cap', 'crown', 'ninja', 'horns', 'halo'];
-export const WEAPONS: Weapon[] = ['none', 'sword', 'staff', 'hammer'];
+export const ACCESSORIES: readonly Accessory[] = CORE_ACCESSORIES;
+export const WEAPONS: readonly Weapon[] = CORE_WEAPONS;
 
 /**
  * Joint angles in degrees. 0 = limb pointing straight down,
