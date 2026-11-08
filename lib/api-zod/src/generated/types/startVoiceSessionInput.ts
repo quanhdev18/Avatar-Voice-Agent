@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { StartVoiceSessionInputMode } from './startVoiceSessionInputMode';
 
 export interface StartVoiceSessionInput {
   /**
@@ -12,4 +13,5 @@ export interface StartVoiceSessionInput {
      * @maxLength 80
      */
   lessonId: string;
+  mode?: StartVoiceSessionInputMode;
 }

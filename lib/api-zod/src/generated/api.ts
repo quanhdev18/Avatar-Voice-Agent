@@ -23,7 +23,10 @@ export const HealthCheckResponse = zod.object({
  */
 export const GetVoiceStatusResponse = zod.object({
   "available": zod.boolean(),
-  "missingProviders": zod.array(zod.enum(['livekit', 'gemini']))
+  "missingProviders": zod.array(zod.enum(['livekit', 'gemini', 'openai'])),
+  "voiceProvider": zod.string(),
+  "avatarProvider": zod.string().nullable(),
+  "authMode": zod.enum(['clerk', 'demo'])
 })
 
 
@@ -36,15 +39,20 @@ export const startVoiceSessionBodyLessonIdMax = 80;
 
 
 export const StartVoiceSessionBody = zod.object({
-  "lessonId": zod.string().min(1).max(startVoiceSessionBodyLessonIdMax)
+  "lessonId": zod.string().min(1).max(startVoiceSessionBodyLessonIdMax),
+  "mode": zod.enum(['voice', 'demo']).optional()
 })
 
 export const StartVoiceSessionResponse = zod.object({
   "sessionId": zod.string().uuid(),
   "roomName": zod.string(),
-  "livekitUrl": zod.string().url(),
-  "participantToken": zod.string(),
-  "tokenExpiresAt": zod.coerce.date()
+  "mode": zod.enum(['voice', 'demo']),
+  "livekitUrl": zod.string().nullable(),
+  "participantToken": zod.string().nullable(),
+  "tokenExpiresAt": zod.coerce.date(),
+  "maxDurationSeconds": zod.number().int(),
+  "remainingDailySeconds": zod.number().int(),
+  "avatarProvider": zod.string().nullable()
 })
 
 
@@ -81,7 +89,8 @@ export const FinishVoiceSessionBody = zod.object({
   "elapsedMs": zod.number().int().min(finishVoiceSessionBodyTranscriptItemElapsedMsMin)
 })).max(finishVoiceSessionBodyTranscriptMax),
   "summary": zod.string().max(finishVoiceSessionBodySummaryMax).nullish(),
-  "commonMistakes": zod.array(zod.string().max(finishVoiceSessionBodyCommonMistakesItemMax)).max(finishVoiceSessionBodyCommonMistakesMax).optional()
+  "commonMistakes": zod.array(zod.string().max(finishVoiceSessionBodyCommonMistakesItemMax)).max(finishVoiceSessionBodyCommonMistakesMax).optional(),
+  "lessonCompleted": zod.boolean().optional().describe('Only honoured for demo sessions; in voice sessions the agent marks progress via a tool call.')
 })
 
 export const finishVoiceSessionResponseTranscriptItemTextMax = 5000;
@@ -102,6 +111,307 @@ export const FinishVoiceSessionResponse = zod.object({
 })),
   "summary": zod.string().nullable(),
   "commonMistakes": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Learner dashboard
+ */
+export const GetDashboardResponse = zod.object({
+  "displayName": zod.string().nullable(),
+  "level": zod.string(),
+  "streakDays": zod.number().int(),
+  "completedLessons": zod.number().int(),
+  "totalLessons": zod.number().int(),
+  "nextLesson": zod.union([zod.object({
+  "id": zod.string(),
+  "level": zod.string(),
+  "order": zod.number().int(),
+  "title": zod.string(),
+  "titleVi": zod.string(),
+  "status": zod.enum(['not_started', 'in_progress', 'completed'])
+}),zod.null()]),
+  "dueReviewCount": zod.number().int(),
+  "notebookCount": zod.number().int(),
+  "todaySecondsUsed": zod.number().int(),
+  "dailyMinuteLimit": zod.number().int(),
+  "weakPoints": zod.array(zod.string()),
+  "recentSessions": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "lessonId": zod.string(),
+  "lessonTitle": zod.string().nullable(),
+  "mode": zod.string(),
+  "status": zod.string(),
+  "durationSeconds": zod.number().int(),
+  "summary": zod.string().nullable(),
+  "mistakeCount": zod.number().int(),
+  "startedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary List lessons with learner progress
+ */
+export const ListLessonsResponseItem = zod.object({
+  "id": zod.string(),
+  "level": zod.string(),
+  "order": zod.number().int(),
+  "title": zod.string(),
+  "titleVi": zod.string(),
+  "status": zod.enum(['not_started', 'in_progress', 'completed'])
+})
+export const ListLessonsResponse = zod.array(ListLessonsResponseItem)
+
+
+/**
+ * @summary Full lesson content
+ */
+export const GetLessonParams = zod.object({
+  "lessonId": zod.coerce.string()
+})
+
+export const GetLessonResponse = zod.object({
+  "id": zod.string(),
+  "level": zod.string(),
+  "order": zod.number().int(),
+  "title": zod.string(),
+  "titleVi": zod.string(),
+  "status": zod.enum(['not_started', 'in_progress', 'completed']),
+  "objectivesVi": zod.array(zod.string()),
+  "vocab": zod.array(zod.object({
+  "kanji": zod.string().optional(),
+  "kana": zod.string(),
+  "romaji": zod.string(),
+  "meaningVi": zod.string(),
+  "example": zod.string().optional(),
+  "exampleVi": zod.string().optional()
+})),
+  "grammar": zod.array(zod.object({
+  "pattern": zod.string(),
+  "meaningVi": zod.string(),
+  "explanationVi": zod.string(),
+  "examples": zod.array(zod.object({
+  "ja": zod.string(),
+  "romaji": zod.string(),
+  "vi": zod.string()
+}))
+})),
+  "dialogue": zod.array(zod.object({
+  "speaker": zod.string(),
+  "ja": zod.string(),
+  "romaji": zod.string(),
+  "vi": zod.string()
+})),
+  "rolePlayVi": zod.string()
+})
+
+
+/**
+ * @summary Notebook items
+ */
+export const ListNotebookQueryParams = zod.object({
+  "due": zod.coerce.boolean().optional()
+})
+
+export const listNotebookResponseDataTermMax = 200;
+
+export const listNotebookResponseDataKanaMax = 200;
+
+export const listNotebookResponseDataRomajiMax = 200;
+
+export const listNotebookResponseDataMeaningViMax = 500;
+
+export const listNotebookResponseDataExampleMax = 500;
+
+export const listNotebookResponseDataExampleViMax = 500;
+
+
+
+export const ListNotebookResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['vocab', 'grammar']),
+  "term": zod.string(),
+  "data": zod.object({
+  "term": zod.string().min(1).max(listNotebookResponseDataTermMax),
+  "kana": zod.string().max(listNotebookResponseDataKanaMax).optional(),
+  "romaji": zod.string().max(listNotebookResponseDataRomajiMax).optional(),
+  "meaningVi": zod.string().min(1).max(listNotebookResponseDataMeaningViMax),
+  "example": zod.string().max(listNotebookResponseDataExampleMax).optional(),
+  "exampleVi": zod.string().max(listNotebookResponseDataExampleViMax).optional()
+}),
+  "sourceLessonId": zod.string().nullable(),
+  "ease": zod.number(),
+  "intervalDays": zod.number().int(),
+  "repetitions": zod.number().int(),
+  "dueAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+})
+export const ListNotebookResponse = zod.array(ListNotebookResponseItem)
+
+
+/**
+ * @summary Add or update a notebook item
+ */
+export const addNotebookItemBodyDataTermMax = 200;
+
+export const addNotebookItemBodyDataKanaMax = 200;
+
+export const addNotebookItemBodyDataRomajiMax = 200;
+
+export const addNotebookItemBodyDataMeaningViMax = 500;
+
+export const addNotebookItemBodyDataExampleMax = 500;
+
+export const addNotebookItemBodyDataExampleViMax = 500;
+
+
+
+export const AddNotebookItemBody = zod.object({
+  "type": zod.enum(['vocab', 'grammar']),
+  "data": zod.object({
+  "term": zod.string().min(1).max(addNotebookItemBodyDataTermMax),
+  "kana": zod.string().max(addNotebookItemBodyDataKanaMax).optional(),
+  "romaji": zod.string().max(addNotebookItemBodyDataRomajiMax).optional(),
+  "meaningVi": zod.string().min(1).max(addNotebookItemBodyDataMeaningViMax),
+  "example": zod.string().max(addNotebookItemBodyDataExampleMax).optional(),
+  "exampleVi": zod.string().max(addNotebookItemBodyDataExampleViMax).optional()
+}),
+  "sourceLessonId": zod.string().nullish()
+})
+
+export const addNotebookItemResponseDataTermMax = 200;
+
+export const addNotebookItemResponseDataKanaMax = 200;
+
+export const addNotebookItemResponseDataRomajiMax = 200;
+
+export const addNotebookItemResponseDataMeaningViMax = 500;
+
+export const addNotebookItemResponseDataExampleMax = 500;
+
+export const addNotebookItemResponseDataExampleViMax = 500;
+
+
+
+export const AddNotebookItemResponse = zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['vocab', 'grammar']),
+  "term": zod.string(),
+  "data": zod.object({
+  "term": zod.string().min(1).max(addNotebookItemResponseDataTermMax),
+  "kana": zod.string().max(addNotebookItemResponseDataKanaMax).optional(),
+  "romaji": zod.string().max(addNotebookItemResponseDataRomajiMax).optional(),
+  "meaningVi": zod.string().min(1).max(addNotebookItemResponseDataMeaningViMax),
+  "example": zod.string().max(addNotebookItemResponseDataExampleMax).optional(),
+  "exampleVi": zod.string().max(addNotebookItemResponseDataExampleViMax).optional()
+}),
+  "sourceLessonId": zod.string().nullable(),
+  "ease": zod.number(),
+  "intervalDays": zod.number().int(),
+  "repetitions": zod.number().int(),
+  "dueAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Grade a flashcard (SM-2)
+ */
+export const ReviewNotebookItemParams = zod.object({
+  "itemId": zod.coerce.string().uuid()
+})
+
+export const reviewNotebookItemBodyQualityMin = 0;
+export const reviewNotebookItemBodyQualityMax = 5;
+
+
+
+export const ReviewNotebookItemBody = zod.object({
+  "quality": zod.number().int().min(reviewNotebookItemBodyQualityMin).max(reviewNotebookItemBodyQualityMax)
+})
+
+export const reviewNotebookItemResponseDataTermMax = 200;
+
+export const reviewNotebookItemResponseDataKanaMax = 200;
+
+export const reviewNotebookItemResponseDataRomajiMax = 200;
+
+export const reviewNotebookItemResponseDataMeaningViMax = 500;
+
+export const reviewNotebookItemResponseDataExampleMax = 500;
+
+export const reviewNotebookItemResponseDataExampleViMax = 500;
+
+
+
+export const ReviewNotebookItemResponse = zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['vocab', 'grammar']),
+  "term": zod.string(),
+  "data": zod.object({
+  "term": zod.string().min(1).max(reviewNotebookItemResponseDataTermMax),
+  "kana": zod.string().max(reviewNotebookItemResponseDataKanaMax).optional(),
+  "romaji": zod.string().max(reviewNotebookItemResponseDataRomajiMax).optional(),
+  "meaningVi": zod.string().min(1).max(reviewNotebookItemResponseDataMeaningViMax),
+  "example": zod.string().max(reviewNotebookItemResponseDataExampleMax).optional(),
+  "exampleVi": zod.string().max(reviewNotebookItemResponseDataExampleViMax).optional()
+}),
+  "sourceLessonId": zod.string().nullable(),
+  "ease": zod.number(),
+  "intervalDays": zod.number().int(),
+  "repetitions": zod.number().int(),
+  "dueAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Past sessions
+ */
+export const ListSessionsResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "lessonId": zod.string(),
+  "lessonTitle": zod.string().nullable(),
+  "mode": zod.string(),
+  "status": zod.string(),
+  "durationSeconds": zod.number().int(),
+  "summary": zod.string().nullable(),
+  "mistakeCount": zod.number().int(),
+  "startedAt": zod.coerce.date()
+})
+export const ListSessionsResponse = zod.array(ListSessionsResponseItem)
+
+
+/**
+ * @summary Session detail with transcript
+ */
+export const GetSessionParams = zod.object({
+  "sessionId": zod.coerce.string().uuid()
+})
+
+export const getSessionResponseTranscriptItemTextMax = 5000;
+
+export const getSessionResponseTranscriptItemElapsedMsMin = 0;
+
+
+
+export const GetSessionResponse = zod.object({
+  "id": zod.string().uuid(),
+  "lessonId": zod.string(),
+  "lessonTitle": zod.string().nullable(),
+  "mode": zod.string(),
+  "status": zod.string(),
+  "durationSeconds": zod.number().int(),
+  "summary": zod.string().nullable(),
+  "commonMistakes": zod.array(zod.string()),
+  "transcript": zod.array(zod.object({
+  "speaker": zod.enum(['teacher', 'learner']),
+  "text": zod.string().max(getSessionResponseTranscriptItemTextMax),
+  "language": zod.enum(['ja', 'vi', 'mixed']),
+  "elapsedMs": zod.number().int().min(getSessionResponseTranscriptItemElapsedMsMin)
+})),
+  "startedAt": zod.coerce.date()
 })
 
 

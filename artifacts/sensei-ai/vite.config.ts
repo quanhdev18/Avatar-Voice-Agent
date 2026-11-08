@@ -65,6 +65,10 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    // Local dev: forward /api to the Express server (on Replit the router does this).
+    proxy: {
+      '/api': { target: `http://localhost:${process.env.API_PORT ?? 8080}`, changeOrigin: true },
+    },
     port,
     strictPort: true,
     host: '0.0.0.0',

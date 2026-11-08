@@ -5,9 +5,14 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { VoiceStatusAuthMode } from './voiceStatusAuthMode';
 import type { VoiceStatusMissingProvidersItem } from './voiceStatusMissingProvidersItem';
 
 export interface VoiceStatus {
   available: boolean;
   missingProviders: VoiceStatusMissingProvidersItem[];
+  voiceProvider: string;
+  /** @nullable */
+  avatarProvider: string | null;
+  authMode: VoiceStatusAuthMode;
 }

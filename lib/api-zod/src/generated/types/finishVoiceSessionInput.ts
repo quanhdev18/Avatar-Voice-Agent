@@ -25,4 +25,6 @@ export interface FinishVoiceSessionInput {
      * @items.maxLength 500
      */
   commonMistakes?: string[];
+  /** Only honoured for demo sessions; in voice sessions the agent marks progress via a tool call. */
+  lessonCompleted?: boolean;
 }

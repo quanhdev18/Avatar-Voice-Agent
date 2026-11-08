@@ -60,6 +60,8 @@ paths:
                 $ref: "#/components/schemas/StartedVoiceSession"
         "401":
           description: Sign-in required
+        "429":
+          description: Daily minute limit reached
         "503":
           description: Voice provider credentials are not configured
   /sensei/sessions/{sessionId}/finish:
@@ -91,6 +93,151 @@ paths:
           description: Sign-in required
         "404":
           description: Session not found
+  /me/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [learner]
+      summary: Learner dashboard
+      responses:
+        "200":
+          description: Dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /lessons:
+    get:
+      operationId: listLessons
+      tags: [learner]
+      summary: List lessons with learner progress
+      responses:
+        "200":
+          description: Lessons
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LessonSummary"
+  /lessons/{lessonId}:
+    get:
+      operationId: getLesson
+      tags: [learner]
+      summary: Full lesson content
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lesson
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonDetail"
+        "404":
+          description: Not found
+  /notebook:
+    get:
+      operationId: listNotebook
+      tags: [notebook]
+      summary: Notebook items
+      parameters:
+        - name: due
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotebookItem"
+    post:
+      operationId: addNotebookItem
+      tags: [notebook]
+      summary: Add or update a notebook item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotebookItemInput"
+      responses:
+        "200":
+          description: Saved item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookItem"
+  /notebook/{itemId}/review:
+    post:
+      operationId: reviewNotebookItem
+      tags: [notebook]
+      summary: Grade a flashcard (SM-2)
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewInput"
+      responses:
+        "200":
+          description: Updated item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookItem"
+        "404":
+          description: Not found
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [history]
+      summary: Past sessions
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionSummary"
+  /sessions/{sessionId}:
+    get:
+      operationId: getSession
+      tags: [history]
+      summary: Session detail with transcript
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetail"
+        "404":
+          description: Not found
 components:
   schemas:
     HealthStatus:
@@ -109,8 +256,15 @@ components:
           type: array
           items:
             type: string
-            enum: [livekit, gemini]
-      required: [available, missingProviders]
+            enum: [livekit, gemini, openai]
+        voiceProvider:
+          type: string
+        avatarProvider:
+          type: ["string", "null"]
+        authMode:
+          type: string
+          enum: [clerk, demo]
+      required: [available, missingProviders, voiceProvider, avatarProvider, authMode]
     StartVoiceSessionInput:
       type: object
       properties:
@@ -118,6 +272,9 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+        mode:
+          type: string
+          enum: [voice, demo]
       required: [lessonId]
     StartedVoiceSession:
       type: object
@@ -127,15 +284,23 @@ components:
           format: uuid
         roomName:
           type: string
+        mode:
+          type: string
+          enum: [voice, demo]
         livekitUrl:
-          type: string
-          format: uri
+          type: ["string", "null"]
         participantToken:
-          type: string
+          type: ["string", "null"]
         tokenExpiresAt:
           type: string
           format: date-time
-      required: [sessionId, roomName, livekitUrl, participantToken, tokenExpiresAt]
+        maxDurationSeconds:
+          type: integer
+        remainingDailySeconds:
+          type: integer
+        avatarProvider:
+          type: ["string", "null"]
+      required: [sessionId, roomName, mode, livekitUrl, participantToken, tokenExpiresAt, maxDurationSeconds, remainingDailySeconds, avatarProvider]
     TranscriptEntry:
       type: object
       properties:
@@ -173,6 +338,9 @@ components:
             type: string
             maxLength: 500
           maxItems: 50
+        lessonCompleted:
+          type: boolean
+          description: Only honoured for demo sessions; in voice sessions the agent marks progress via a tool call.
       required: [durationSeconds, transcript]
     FinishedVoiceSession:
       type: object
@@ -197,3 +365,180 @@ components:
             type: string
       required: [sessionId, status, durationSeconds, transcript, summary, commonMistakes]
 
+    LessonSummary:
+      type: object
+      properties:
+        id: { type: string }
+        level: { type: string }
+        order: { type: integer }
+        title: { type: string }
+        titleVi: { type: string }
+        status:
+          type: string
+          enum: [not_started, in_progress, completed]
+      required: [id, level, order, title, titleVi, status]
+    VocabEntry:
+      type: object
+      properties:
+        kanji: { type: string }
+        kana: { type: string }
+        romaji: { type: string }
+        meaningVi: { type: string }
+        example: { type: string }
+        exampleVi: { type: string }
+      required: [kana, romaji, meaningVi]
+    GrammarExample:
+      type: object
+      properties:
+        ja: { type: string }
+        romaji: { type: string }
+        vi: { type: string }
+      required: [ja, romaji, vi]
+    GrammarPoint:
+      type: object
+      properties:
+        pattern: { type: string }
+        meaningVi: { type: string }
+        explanationVi: { type: string }
+        examples:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrammarExample"
+      required: [pattern, meaningVi, explanationVi, examples]
+    DialogueLine:
+      type: object
+      properties:
+        speaker: { type: string }
+        ja: { type: string }
+        romaji: { type: string }
+        vi: { type: string }
+      required: [speaker, ja, romaji, vi]
+    LessonDetail:
+      type: object
+      properties:
+        id: { type: string }
+        level: { type: string }
+        order: { type: integer }
+        title: { type: string }
+        titleVi: { type: string }
+        status:
+          type: string
+          enum: [not_started, in_progress, completed]
+        objectivesVi:
+          type: array
+          items: { type: string }
+        vocab:
+          type: array
+          items:
+            $ref: "#/components/schemas/VocabEntry"
+        grammar:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrammarPoint"
+        dialogue:
+          type: array
+          items:
+            $ref: "#/components/schemas/DialogueLine"
+        rolePlayVi: { type: string }
+      required: [id, level, order, title, titleVi, status, objectivesVi, vocab, grammar, dialogue, rolePlayVi]
+    Dashboard:
+      type: object
+      properties:
+        displayName: { type: ["string", "null"] }
+        level: { type: string }
+        streakDays: { type: integer }
+        completedLessons: { type: integer }
+        totalLessons: { type: integer }
+        nextLesson:
+          oneOf:
+            - $ref: "#/components/schemas/LessonSummary"
+            - type: "null"
+        dueReviewCount: { type: integer }
+        notebookCount: { type: integer }
+        todaySecondsUsed: { type: integer }
+        dailyMinuteLimit: { type: integer }
+        weakPoints:
+          type: array
+          items: { type: string }
+        recentSessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionSummary"
+      required: [displayName, level, streakDays, completedLessons, totalLessons, nextLesson, dueReviewCount, notebookCount, todaySecondsUsed, dailyMinuteLimit, weakPoints, recentSessions]
+    NotebookData:
+      type: object
+      properties:
+        term: { type: string, minLength: 1, maxLength: 200 }
+        kana: { type: string, maxLength: 200 }
+        romaji: { type: string, maxLength: 200 }
+        meaningVi: { type: string, minLength: 1, maxLength: 500 }
+        example: { type: string, maxLength: 500 }
+        exampleVi: { type: string, maxLength: 500 }
+      required: [term, meaningVi]
+    NotebookItemInput:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [vocab, grammar]
+        data:
+          $ref: "#/components/schemas/NotebookData"
+        sourceLessonId: { type: ["string", "null"] }
+      required: [type, data]
+    NotebookItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [vocab, grammar]
+        term: { type: string }
+        data:
+          $ref: "#/components/schemas/NotebookData"
+        sourceLessonId: { type: ["string", "null"] }
+        ease: { type: number }
+        intervalDays: { type: integer }
+        repetitions: { type: integer }
+        dueAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, type, term, data, sourceLessonId, ease, intervalDays, repetitions, dueAt, createdAt]
+    ReviewInput:
+      type: object
+      properties:
+        quality:
+          type: integer
+          minimum: 0
+          maximum: 5
+      required: [quality]
+    SessionSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lessonId: { type: string }
+        lessonTitle: { type: ["string", "null"] }
+        mode: { type: string }
+        status: { type: string }
+        durationSeconds: { type: integer }
+        summary: { type: ["string", "null"] }
+        mistakeCount: { type: integer }
+        startedAt: { type: string, format: date-time }
+      required: [id, lessonId, lessonTitle, mode, status, durationSeconds, summary, mistakeCount, startedAt]
+    SessionDetail:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lessonId: { type: string }
+        lessonTitle: { type: ["string", "null"] }
+        mode: { type: string }
+        status: { type: string }
+        durationSeconds: { type: integer }
+        summary: { type: ["string", "null"] }
+        commonMistakes:
+          type: array
+          items: { type: string }
+        transcript:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptEntry"
+        startedAt: { type: string, format: date-time }
+      required: [id, lessonId, lessonTitle, mode, status, durationSeconds, summary, commonMistakes, transcript, startedAt]

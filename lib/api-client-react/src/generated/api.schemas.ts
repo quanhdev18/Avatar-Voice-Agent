@@ -15,12 +15,33 @@ export type VoiceStatusMissingProvidersItem = typeof VoiceStatusMissingProviders
 export const VoiceStatusMissingProvidersItem = {
   livekit: 'livekit',
   gemini: 'gemini',
+  openai: 'openai',
+} as const;
+
+export type VoiceStatusAuthMode = typeof VoiceStatusAuthMode[keyof typeof VoiceStatusAuthMode];
+
+
+export const VoiceStatusAuthMode = {
+  clerk: 'clerk',
+  demo: 'demo',
 } as const;
 
 export interface VoiceStatus {
   available: boolean;
   missingProviders: VoiceStatusMissingProvidersItem[];
+  voiceProvider: string;
+  /** @nullable */
+  avatarProvider: string | null;
+  authMode: VoiceStatusAuthMode;
 }
+
+export type StartVoiceSessionInputMode = typeof StartVoiceSessionInputMode[keyof typeof StartVoiceSessionInputMode];
+
+
+export const StartVoiceSessionInputMode = {
+  voice: 'voice',
+  demo: 'demo',
+} as const;
 
 export interface StartVoiceSessionInput {
   /**
@@ -28,14 +49,30 @@ export interface StartVoiceSessionInput {
      * @maxLength 80
      */
   lessonId: string;
+  mode?: StartVoiceSessionInputMode;
 }
+
+export type StartedVoiceSessionMode = typeof StartedVoiceSessionMode[keyof typeof StartedVoiceSessionMode];
+
+
+export const StartedVoiceSessionMode = {
+  voice: 'voice',
+  demo: 'demo',
+} as const;
 
 export interface StartedVoiceSession {
   sessionId: string;
   roomName: string;
-  livekitUrl: string;
-  participantToken: string;
+  mode: StartedVoiceSessionMode;
+  /** @nullable */
+  livekitUrl: string | null;
+  /** @nullable */
+  participantToken: string | null;
   tokenExpiresAt: string;
+  maxDurationSeconds: number;
+  remainingDailySeconds: number;
+  /** @nullable */
+  avatarProvider: string | null;
 }
 
 export type TranscriptEntrySpeaker = typeof TranscriptEntrySpeaker[keyof typeof TranscriptEntrySpeaker];
@@ -82,6 +119,8 @@ export interface FinishVoiceSessionInput {
      * @items.maxLength 500
      */
   commonMistakes?: string[];
+  /** Only honoured for demo sessions; in voice sessions the agent marks progress via a tool call. */
+  lessonCompleted?: boolean;
 }
 
 export type FinishedVoiceSessionStatus = typeof FinishedVoiceSessionStatus[keyof typeof FinishedVoiceSessionStatus];
@@ -100,4 +139,189 @@ export interface FinishedVoiceSession {
   summary: string | null;
   commonMistakes: string[];
 }
+
+export type LessonSummaryStatus = typeof LessonSummaryStatus[keyof typeof LessonSummaryStatus];
+
+
+export const LessonSummaryStatus = {
+  not_started: 'not_started',
+  in_progress: 'in_progress',
+  completed: 'completed',
+} as const;
+
+export interface LessonSummary {
+  id: string;
+  level: string;
+  order: number;
+  title: string;
+  titleVi: string;
+  status: LessonSummaryStatus;
+}
+
+export interface VocabEntry {
+  kanji?: string;
+  kana: string;
+  romaji: string;
+  meaningVi: string;
+  example?: string;
+  exampleVi?: string;
+}
+
+export interface GrammarExample {
+  ja: string;
+  romaji: string;
+  vi: string;
+}
+
+export interface GrammarPoint {
+  pattern: string;
+  meaningVi: string;
+  explanationVi: string;
+  examples: GrammarExample[];
+}
+
+export interface DialogueLine {
+  speaker: string;
+  ja: string;
+  romaji: string;
+  vi: string;
+}
+
+export type LessonDetailStatus = typeof LessonDetailStatus[keyof typeof LessonDetailStatus];
+
+
+export const LessonDetailStatus = {
+  not_started: 'not_started',
+  in_progress: 'in_progress',
+  completed: 'completed',
+} as const;
+
+export interface LessonDetail {
+  id: string;
+  level: string;
+  order: number;
+  title: string;
+  titleVi: string;
+  status: LessonDetailStatus;
+  objectivesVi: string[];
+  vocab: VocabEntry[];
+  grammar: GrammarPoint[];
+  dialogue: DialogueLine[];
+  rolePlayVi: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  lessonId: string;
+  /** @nullable */
+  lessonTitle: string | null;
+  mode: string;
+  status: string;
+  durationSeconds: number;
+  /** @nullable */
+  summary: string | null;
+  mistakeCount: number;
+  startedAt: string;
+}
+
+export interface Dashboard {
+  /** @nullable */
+  displayName: string | null;
+  level: string;
+  streakDays: number;
+  completedLessons: number;
+  totalLessons: number;
+  nextLesson: LessonSummary | null;
+  dueReviewCount: number;
+  notebookCount: number;
+  todaySecondsUsed: number;
+  dailyMinuteLimit: number;
+  weakPoints: string[];
+  recentSessions: SessionSummary[];
+}
+
+export interface NotebookData {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  term: string;
+  /** @maxLength 200 */
+  kana?: string;
+  /** @maxLength 200 */
+  romaji?: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  meaningVi: string;
+  /** @maxLength 500 */
+  example?: string;
+  /** @maxLength 500 */
+  exampleVi?: string;
+}
+
+export type NotebookItemInputType = typeof NotebookItemInputType[keyof typeof NotebookItemInputType];
+
+
+export const NotebookItemInputType = {
+  vocab: 'vocab',
+  grammar: 'grammar',
+} as const;
+
+export interface NotebookItemInput {
+  type: NotebookItemInputType;
+  data: NotebookData;
+  /** @nullable */
+  sourceLessonId?: string | null;
+}
+
+export type NotebookItemType = typeof NotebookItemType[keyof typeof NotebookItemType];
+
+
+export const NotebookItemType = {
+  vocab: 'vocab',
+  grammar: 'grammar',
+} as const;
+
+export interface NotebookItem {
+  id: string;
+  type: NotebookItemType;
+  term: string;
+  data: NotebookData;
+  /** @nullable */
+  sourceLessonId: string | null;
+  ease: number;
+  intervalDays: number;
+  repetitions: number;
+  dueAt: string;
+  createdAt: string;
+}
+
+export interface ReviewInput {
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  quality: number;
+}
+
+export interface SessionDetail {
+  id: string;
+  lessonId: string;
+  /** @nullable */
+  lessonTitle: string | null;
+  mode: string;
+  status: string;
+  durationSeconds: number;
+  /** @nullable */
+  summary: string | null;
+  commonMistakes: string[];
+  transcript: TranscriptEntry[];
+  startedAt: string;
+}
+
+export type ListNotebookParams = {
+due?: boolean;
+};
 
