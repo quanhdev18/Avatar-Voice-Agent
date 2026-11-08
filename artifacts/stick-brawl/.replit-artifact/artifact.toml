@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Que Chiến"
+description = "Game người que đánh nhau nhiều người chơi — bộ giao diện (menu, sảnh, phòng chờ, tuỳ chỉnh nhân vật, HUD trận đấu, kết quả)."
+version = "1.0.0"
+id = "artifacts/stick-brawl"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25224
+
+[services.development]
+run = "pnpm --filter @workspace/stick-brawl run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/stick-brawl", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/stick-brawl/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25224"
+BASE_PATH = "/"

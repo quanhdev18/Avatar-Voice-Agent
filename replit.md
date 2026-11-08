@@ -22,7 +22,12 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/stick-brawl` — **Que Chiến**, multiplayer stick-figure fighting game (UI phase, local demo only, no netcode yet)
+  - `src/index.css` — design tokens (paper / chalkboard themes) and sketchy primitives (`.sk`, `.btn`, `.hl`, `.hatch`)
+  - `src/components/StickFigure.tsx` — animated SVG fighter (poses, accessories, weapons)
+  - `src/components/ui.tsx` — Button, Panel, Bar, Badge, Tabs, Toggle, Slider, Modal, Burst…
+  - `src/pages/*` — Home, Lobby, Room, Customize, Play (HUD + local bot sim), Results, Kit
+  - Run: `pnpm --filter @workspace/stick-brawl run dev` (port 25224)
 
 ## Architecture decisions
 

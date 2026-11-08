@@ -1,0 +1,260 @@
+@import 'tailwindcss';
+
+@custom-variant chalk (&:where([data-theme='chalk'], [data-theme='chalk'] *));
+
+/* ------------------------------------------------------------------
+ * Design tokens — "Giấy" (notebook paper) and "Bảng đen" (chalkboard)
+ * ------------------------------------------------------------------ */
+:root {
+  --paper: #f6f1e5;
+  --paper-2: #ece4d2;
+  --paper-3: #fffaf0;
+  --ink: #1d1b22;
+  --ink-soft: #5b5662;
+  --rule: #c4d6ea;
+  --margin: #eba3a3;
+  --crimson: #e23d3d;
+  --cobalt: #2d6be0;
+  --marker: #ffcf33;
+  --mint: #1fa874;
+  --violet: #8b5cf6;
+  --on-accent: #ffffff;
+  --on-marker: #1d1b22;
+  color-scheme: light;
+}
+
+[data-theme='chalk'] {
+  --paper: #1f2a2b;
+  --paper-2: #283738;
+  --paper-3: #2e3e3f;
+  --ink: #eef2ea;
+  --ink-soft: #a7b3ac;
+  --rule: rgba(255, 255, 255, 0.05);
+  --margin: rgba(255, 120, 120, 0.22);
+  --crimson: #ff6b6b;
+  --cobalt: #6aa1ff;
+  --marker: #ffd84d;
+  --mint: #4fd6a0;
+  --violet: #b69bff;
+  --on-accent: #161c1d;
+  --on-marker: #161c1d;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-crimson: var(--crimson);
+  --color-cobalt: var(--cobalt);
+  --color-marker: var(--marker);
+  --color-mint: var(--mint);
+  --color-violet: var(--violet);
+  --color-on-accent: var(--on-accent);
+  --color-on-marker: var(--on-marker);
+  --font-display: 'Bungee', 'Impact', system-ui, sans-serif;
+  --font-hand: 'Patrick Hand', 'Comic Sans MS', system-ui, sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: 18px;
+  color: var(--ink);
+  background-color: var(--paper);
+  /* notebook rules + red margin line */
+  background-image:
+    linear-gradient(90deg, transparent 54px, var(--margin) 54px, var(--margin) 56px, transparent 56px),
+    repeating-linear-gradient(180deg, transparent 0 31px, var(--rule) 31px 32px);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+::selection {
+  background: var(--marker);
+  color: var(--on-marker);
+}
+
+@media (max-width: 639px) {
+  body {
+    background-image: repeating-linear-gradient(180deg, transparent 0 31px, var(--rule) 31px 32px);
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Sketchy primitives
+ * ------------------------------------------------------------------ */
+@layer components {
+  .sk {
+    border: 2.5px solid var(--ink);
+    border-radius: 14px 5px 16px 6px / 6px 15px 5px 14px;
+  }
+  .sk-alt {
+    border: 2.5px solid var(--ink);
+    border-radius: 6px 16px 5px 14px / 14px 5px 16px 6px;
+  }
+  .sk-round {
+    border: 2.5px solid var(--ink);
+    border-radius: 60% 40% 55% 45% / 45% 55% 40% 60%;
+  }
+  .shadow-ink {
+    box-shadow: 4px 5px 0 var(--ink);
+  }
+  .shadow-ink-sm {
+    box-shadow: 2px 3px 0 var(--ink);
+  }
+  .shadow-ink-lg {
+    box-shadow: 7px 8px 0 var(--ink);
+  }
+
+  .btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    border: 2.5px solid var(--ink);
+    border-radius: 14px 5px 16px 6px / 6px 15px 5px 14px;
+    box-shadow: 4px 5px 0 var(--ink);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, background-color 0.15s ease;
+  }
+  .btn:hover:not(:disabled) {
+    transform: translate(-1px, -1px) rotate(-0.6deg);
+    box-shadow: 5px 6px 0 var(--ink);
+  }
+  .btn:active:not(:disabled) {
+    transform: translate(3px, 4px);
+    box-shadow: 1px 1px 0 var(--ink);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn:focus-visible,
+  .focus-ring:focus-visible {
+    outline: 3px dashed var(--cobalt);
+    outline-offset: 4px;
+  }
+
+  /* highlighter stroke behind text */
+  .hl {
+    background: linear-gradient(104deg, transparent 2%, var(--marker) 3%, var(--marker) 96%, transparent 97%);
+    background-size: 100% 55%;
+    background-position: 0 85%;
+    background-repeat: no-repeat;
+    padding: 0 0.2em;
+    color: inherit;
+  }
+
+  /* diagonal hatching used for empty bars / disabled slots */
+  .hatch {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--ink) 18%, transparent) 6px 8px
+    );
+  }
+
+  .tape {
+    position: absolute;
+    width: 86px;
+    height: 24px;
+    background: color-mix(in srgb, var(--marker) 70%, transparent);
+    border-left: 2px dashed color-mix(in srgb, var(--ink) 25%, transparent);
+    border-right: 2px dashed color-mix(in srgb, var(--ink) 25%, transparent);
+  }
+
+  .title-stroke {
+    -webkit-text-stroke: 2px var(--ink);
+    paint-order: stroke fill;
+    text-shadow: 4px 5px 0 var(--ink);
+  }
+
+  .input-sk {
+    width: 100%;
+    background: var(--paper-3);
+    border: 2.5px solid var(--ink);
+    border-radius: 10px 4px 12px 5px / 5px 11px 4px 10px;
+    padding: 0.45rem 0.75rem;
+    font-family: var(--font-hand);
+    font-size: 1.1rem;
+    color: var(--ink);
+    outline: none;
+  }
+  .input-sk:focus {
+    box-shadow: 3px 4px 0 var(--cobalt);
+  }
+
+  .scroll-sk::-webkit-scrollbar {
+    width: 10px;
+  }
+  .scroll-sk::-webkit-scrollbar-thumb {
+    background: var(--ink);
+    border-radius: 8px;
+    border: 3px solid var(--paper-3);
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Motion
+ * ------------------------------------------------------------------ */
+@keyframes wobble {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50% { transform: rotate(1.5deg); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes pop {
+  0% { transform: scale(0.3) rotate(-12deg); opacity: 0; }
+  35% { transform: scale(1.15) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) translateY(-26px) rotate(0); opacity: 0; }
+}
+@keyframes flutter {
+  0%, 100% { transform: skewY(0deg) scaleX(1); }
+  50% { transform: skewY(-12deg) scaleX(0.92); }
+}
+@keyframes blink-dash {
+  to { stroke-dashoffset: -20; }
+}
+@keyframes shake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-3px, 2px); }
+  50% { transform: translate(3px, -2px); }
+  75% { transform: translate(-2px, -1px); }
+}
+@keyframes slide-in {
+  from { transform: translateX(30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes rise {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.anim-wobble { animation: wobble 2.4s ease-in-out infinite; }
+.anim-float { animation: float 3s ease-in-out infinite; }
+.anim-pop { animation: pop 0.9s ease-out forwards; }
+.anim-flutter { animation: flutter 0.5s ease-in-out infinite; transform-origin: right center; transform-box: fill-box; }
+.anim-shake { animation: shake 0.25s linear 2; }
+.anim-slide-in { animation: slide-in 0.3s ease-out both; }
+.anim-rise { animation: rise 0.45s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-wobble, .anim-float, .anim-flutter, .anim-shake { animation: none; }
+}
