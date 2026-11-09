@@ -27,9 +27,10 @@ _Replace the heading above with the project's name, and this line with one sente
   - `src/components/StickFigure.tsx` — animated SVG fighter (poses, accessories, weapons)
   - `src/components/ui.tsx` — Button, Panel, Bar, Badge, Tabs, Toggle, Slider, Modal, Burst…
   - `src/pages/*` — Home, Lobby, Room, Customize, Play (online via `/room/:id/play`, offline bots via `/play`), Results, Kit
+  - `src/lib/maps.tsx` — per-map drawings (`ArenaScene`), thumbnails and `MapPicker`; geometry is read from game-core so visuals match collisions
   - `src/net/client.ts` — WebSocket client, lobby/room state (`useNet`), `NetMatch` (snapshot interpolation + own-fighter prediction)
   - Run: `pnpm --filter @workspace/stick-brawl run dev` (port 25224; proxies `/api` incl. WebSocket to `API_PROXY_TARGET`, default `http://localhost:8080`)
-- `lib/game-core` — shared fight simulation (`sim.ts`), cosmetics whitelist, and the WebSocket protocol + zod schemas (`protocol.ts`). Used by both client and server.
+- `lib/game-core` — shared fight simulation (`sim.ts`), arena geometry + hazards per map (`maps.ts`: floor pieces/pits, lava, moving platforms, wind, spawns), cosmetics whitelist, and the WebSocket protocol + zod schemas (`protocol.ts`). Used by both client and server.
 - `artifacts/api-server/src/game/` — authoritative game server on `/api/game/ws` (same port as the API): `server.ts` (connections, validation, rate limits, lobby), `room.ts` (members, bots, countdown, 30 Hz match loop, 15 Hz snapshots)
   - `GAME_MATCH_SECONDS` env overrides match length (default 180) for quick testing
 
@@ -48,6 +49,9 @@ _Describe the high-level user-facing capabilities of this app once they exist._
 _Populate as you build — explicit user instructions worth remembering across sessions._
 
 ## Gotchas
+
+- Adding a map: add its `MapDef` to `lib/game-core/src/maps.ts` (every spawn x must be over a `ground` span), then a background in `ArenaScene` (`src/lib/maps.tsx`). Server, picker and physics pick it up automatically.
+- Don't run bare `prettier --write` in the repo: there is no prettier config, so defaults would rewrite files to double quotes.
 
 _Populate as you build — sharp edges, "always run X before Y" rules._
 

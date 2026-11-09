@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Bot, Lock, Plus, Search, Shuffle, WifiOff } from 'lucide-react';
-import type { MapId, RoomSummary } from '@workspace/game-core';
+import { MAPS, type MapChoice, type RoomSummary } from '@workspace/game-core';
 
 import { Page } from '@/components/Layout';
 import { StickFigure } from '@/components/StickFigure';
 import { Badge, Button, Modal, Panel, Tabs, Toggle } from '@/components/ui';
-import { MAPS, MODE_LABEL } from '@/lib/mock';
+import { MODE_LABEL } from '@/lib/mock';
+import { MapPicker, MapThumb, mapLabel } from '@/lib/maps';
 import { cn } from '@/lib/utils';
 import { net, useNet } from '@/net/client';
 
 type Filter = 'all' | 'team' | 'ffa';
 
-const mapName = (id: string) => MAPS.find((m) => m.id === id)?.name ?? id;
 
 function Slots({ n, max }: { n: number; max: number }) {
   return (
@@ -122,7 +122,7 @@ export default function Lobby() {
             <OfflineState status={status} />
           ) : (
             <>
-              <div className="hidden grid-cols-[1fr_110px_120px_150px_96px] gap-3 border-b-2 border-dashed border-ink/30 px-4 py-2 font-display text-[11px] text-ink-soft uppercase md:grid">
+              <div className="hidden grid-cols-[1fr_110px_160px_150px_96px] gap-3 border-b-2 border-dashed border-ink/30 px-4 py-2 font-display text-[11px] text-ink-soft uppercase md:grid">
                 <span>Phòng</span>
                 <span>Chế độ</span>
                 <span>Bản đồ</span>
@@ -141,7 +141,7 @@ export default function Lobby() {
                   return (
                     <li
                       key={r.id}
-                      className="anim-slide-in grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 transition-colors hover:bg-paper-2 md:grid-cols-[1fr_110px_120px_150px_96px]"
+                      className="anim-slide-in grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 transition-colors hover:bg-paper-2 md:grid-cols-[1fr_110px_160px_150px_96px]"
                       style={{ animationDelay: `${i * 40}ms` }}
                     >
                       <div className="min-w-0">
@@ -159,7 +159,10 @@ export default function Lobby() {
                         <span>
                           <Badge tone={r.mode === 'team' ? 'blue' : 'red'}>{MODE_LABEL[r.mode]}</Badge>
                         </span>
-                        <span className="truncate">{mapName(r.map)}</span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <MapThumb choice={r.map} className="hidden h-7 w-12 shrink-0 rounded-[4px] border-2 border-ink sm:block" />
+                          <span className="truncate">{mapLabel(r.map)}</span>
+                        </span>
                         <Slots n={r.players} max={r.max} />
                       </div>
                       <div className="hidden justify-end md:flex">{btn}</div>
@@ -258,12 +261,12 @@ function PasswordModal({ room, onClose, onSubmit }: { room: RoomSummary | null; 
   );
 }
 
-type CreateOpts = { name: string; mode: 'team' | 'ffa'; map: MapId; max: 2 | 4 | 6 | 8; password?: string };
+type CreateOpts = { name: string; mode: 'team' | 'ffa'; map: MapChoice; max: 2 | 4 | 6 | 8; password?: string };
 
 function CreateRoomModal({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (o: CreateOpts) => void }) {
   const [name, setName] = useState('Phòng của tui');
   const [mode, setMode] = useState<'team' | 'ffa' | 'koth'>('team');
-  const [map, setMap] = useState<MapId>('notebook');
+  const [map, setMap] = useState<MapChoice>('notebook');
   const [max, setMax] = useState<2 | 4 | 6 | 8>(8);
   const [priv, setPriv] = useState(false);
   const [pw, setPw] = useState('');
@@ -296,24 +299,8 @@ function CreateRoomModal({ open, onClose, onCreate }: { open: boolean; onClose: 
         </div>
         <div>
           <span className="mb-1 block">Bản đồ</span>
-          <div className="grid grid-cols-2 gap-3">
-            {MAPS.map((m) => (
-              <button
-                type="button"
-                key={m.id}
-                onClick={() => setMap(m.id as MapId)}
-                className={cn(
-                  'sk focus-ring p-2 text-left transition-transform',
-                  map === m.id ? 'shadow-ink -translate-y-0.5 bg-marker text-on-marker' : 'bg-paper-3 hover:bg-paper-2',
-                )}
-              >
-                <span className="mb-1 block h-2 w-10 rounded-full border-2 border-ink" style={{ background: m.color }} />
-                <span className="block font-bold leading-tight">{m.name}</span>
-                <span className="block text-sm opacity-75">{m.desc}</span>
-              </button>
-            ))}
-          </div>
-          <p className="mt-1 text-sm text-ink-soft">Hiện mọi bản đồ dùng chung bố cục Trang vở; địa hình riêng sẽ có sau.</p>
+          <MapPicker value={map} onChange={setMap} compact />
+          <p className="mt-2 text-sm text-ink-soft">{map === 'random' ? 'Bốc thăm khi trận bắt đầu.' : MAPS[map].desc} Có thể đổi lại trong phòng chờ.</p>
         </div>
         <div>
           <span className="mb-1 block">Số người tối đa</span>

@@ -5,6 +5,8 @@ import { Page } from '@/components/Layout';
 import { ACCESSORIES, POSES, StickFigure, WEAPONS } from '@/components/StickFigure';
 import { Badge, Bar, Burst, Button, Head, Kbd, Modal, Panel, Scribble, Slider, Star, Tabs, Toggle } from '@/components/ui';
 import { ACCESSORY_LABEL, WEAPON_LABEL } from '@/lib/mock';
+import { MapPicker } from '@/lib/maps';
+import type { MapChoice } from '@workspace/game-core';
 
 const SWATCHES = [
   ['--paper', 'Giấy', 'Nền trang'],
@@ -35,6 +37,7 @@ export default function Kit() {
   const [vol, setVol] = useState(60);
   const [modal, setModal] = useState(false);
   const [hp, setHp] = useState(72);
+  const [map, setMap] = useState<MapChoice>('rooftop');
 
   return (
     <Page>
@@ -155,6 +158,11 @@ export default function Kit() {
           <Burst text="SIÊU CẤP!" size={130} color="var(--violet)" />
           <Burst text="CHẶN!" size={110} color="var(--cobalt)" />
         </div>
+      </Section>
+
+      <Section title="Bản đồ">
+        <p className="mb-3 text-ink-soft">Mỗi bản đồ có địa hình riêng (vực, dung nham, bục di động, gió). Hình vẽ dùng chính dữ liệu va chạm của server.</p>
+        <MapPicker value={map} onChange={setMap} />
       </Section>
 
       <Section title="Người que · Tư thế">

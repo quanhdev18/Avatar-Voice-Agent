@@ -7,13 +7,6 @@ export const MODE_LABEL: Record<GameMode, string> = {
   koth: 'Giữ đồi',
 };
 
-export const MAPS = [
-  { id: 'notebook', name: 'Trang vở', desc: 'Ba bục gỗ, không bẫy', color: 'var(--cobalt)' },
-  { id: 'rooftop', name: 'Sân thượng', desc: 'Gió đẩy người theo nhịp', color: 'var(--crimson)' },
-  { id: 'volcano', name: 'Núi lửa', desc: 'Dung nham dâng theo thời gian', color: '#f2802e' },
-  { id: 'dojo', name: 'Võ đường', desc: 'Sàn phẳng, đấu tay đôi', color: 'var(--mint)' },
-];
-
 export type Bot = { name: string; color: string; accessory: Accessory; weapon: Weapon };
 
 export const BOTS: Bot[] = [

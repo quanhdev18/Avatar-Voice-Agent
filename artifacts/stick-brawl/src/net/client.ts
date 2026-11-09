@@ -19,6 +19,7 @@ import {
   type FighterSnap,
   type GameEvent,
   type Input,
+  type MapId,
   type Mode,
   type Profile,
   type RoomSummary,
@@ -182,7 +183,7 @@ class GameClient {
         this.set({ countdown: msg.n });
         return;
       case 'start':
-        this.set({ countdown: null, result: null, match: new NetMatch(msg.mode, msg.roster, this.state.myId ?? '', (m) => this.send(m)) });
+        this.set({ countdown: null, result: null, match: new NetMatch(msg.mode, msg.map, msg.roster, this.state.myId ?? '', (m) => this.send(m)) });
         return;
       case 'roster':
         this.state.match?.setRoster(msg.roster);
@@ -195,6 +196,7 @@ class GameClient {
         const myId = this.state.myId;
         const result: MatchResult = {
           mode: r.mode,
+          map: r.map,
           winner: r.winner,
           score: r.score,
           durationSec: r.durationSec,
@@ -254,6 +256,9 @@ export function takeInput(s: InputState): Input {
 
 export type MatchView = {
   mode: Mode;
+  map: MapId;
+  /** match time (seconds) the view is drawn at: drives moving platforms and wind */
+  t: number;
   meId: string;
   fighters: Fighter[];
   score: Record<string, number>;
@@ -268,6 +273,8 @@ export class NetMatch {
   private pred: Fighter | null = null;
   private pending: { seq: number; input: Input }[] = [];
   private seq = 0;
+  /** match tick the next predicted input applies to */
+  private predTick = 0;
   private acc = 0;
   private smooth = { x: 0, y: 0 };
   private events: GameEvent[] = [];
@@ -275,6 +282,7 @@ export class NetMatch {
 
   constructor(
     readonly mode: Mode,
+    readonly map: MapId,
     roster: RosterEntry[],
     readonly meId: string,
     private readonly send: (m: ClientMsg) => void,
@@ -307,6 +315,12 @@ export class NetMatch {
       vy: s.vy,
       facing: s.f,
       onGround: s.g,
+      plat: s.p,
+      jumpHeld: s.jh,
+      airJumps: s.aj,
+      lastHitBy: '',
+      lastHitT: 99,
+      burnT: 0,
       hp: s.hp,
       energy: s.en,
       action: s.a,
@@ -338,7 +352,11 @@ export class NetMatch {
     }
     const before = this.pred ? { x: this.pred.x, y: this.pred.y } : null;
     this.pending = this.pending.filter((p) => p.seq > s.ack);
-    if (s.intro <= 0) for (const p of this.pending) predictStep(this.mode, server, p.input);
+    this.predTick = s.tick;
+    for (const p of this.pending) {
+      this.predTick++;
+      if (s.intro <= 0) predictStep(this.mode, this.map, this.predTick, server, p.input);
+    }
     this.pred = server;
     if (before) {
       this.smooth.x += before.x - server.x;
@@ -366,7 +384,8 @@ export class NetMatch {
         this.send({ t: 'in', s: this.seq, b: packInput(i) });
         this.pending.push({ seq: this.seq, input: i });
         if (this.pending.length > 90) this.pending.shift();
-        if (this.pred && latest && latest.intro <= 0) predictStep(this.mode, this.pred, i);
+        this.predTick++;
+        if (this.pred && latest && latest.intro <= 0) predictStep(this.mode, this.map, this.predTick, this.pred, i);
       }
     }
     const k = Math.exp(-dt * 12);
@@ -411,6 +430,15 @@ export class NetMatch {
       }
       fighters.push(f);
     }
-    return { mode: this.mode, meId: this.meId, fighters, score: latest.score, timeLeft: latest.timeLeft, intro: latest.intro };
+    return {
+      mode: this.mode,
+      map: this.map,
+      t: this.renderTime,
+      meId: this.meId,
+      fighters,
+      score: latest.score,
+      timeLeft: latest.timeLeft,
+      intro: latest.intro,
+    };
   }
 }

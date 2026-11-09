@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
+import type { MapId } from '@workspace/game-core';
+
 import type { Accessory, Weapon } from '@/components/StickFigure';
 import { readStorage, writeStorage } from '@/lib/utils';
 
@@ -77,6 +79,7 @@ export function useStore() {
 /* Result of the last match (local or online), handed from Play to Results. */
 export type MatchResult = {
   mode: 'team' | 'ffa';
+  map: MapId;
   /** team id in team mode, player id in free-for-all, or 'draw' */
   winner: string;
   score: Record<string, number>;

@@ -6,7 +6,8 @@ import type { RoomMember, RoomView } from '@workspace/game-core';
 import { Page } from '@/components/Layout';
 import { StickFigure } from '@/components/StickFigure';
 import { Badge, Burst, Button, Panel } from '@/components/ui';
-import { MAPS, MODE_LABEL } from '@/lib/mock';
+import { MODE_LABEL } from '@/lib/mock';
+import { MapCard, MapPicker, mapLabel } from '@/lib/maps';
 import { cn } from '@/lib/utils';
 import { net, useNet } from '@/net/client';
 
@@ -91,7 +92,6 @@ export default function Room() {
   const othersReady = humans.every((m) => m.ready || m.id === room.hostId);
   const teamsOk = room.mode !== 'team' || new Set(room.members.map((m) => m.team)).size === 2;
   const canStart = isHost && room.phase === 'waiting' && room.members.length >= 2 && othersReady && teamsOk;
-  const mapInfo = MAPS.find((m) => m.id === room.map) ?? MAPS[0]!;
 
   const send = () => {
     if (!msg.trim()) return;
@@ -125,37 +125,40 @@ export default function Room() {
           <Badge tone={room.mode === 'team' ? 'blue' : 'red'}>
             {MODE_LABEL[room.mode]} · tối đa {room.max}
           </Badge>
-          <Badge>Bản đồ: {mapInfo.name}</Badge>
+          <Badge>Bản đồ: {mapLabel(room.map)}</Badge>
           <Badge>3 phút · {room.mode === 'team' ? '10' : '5'} K.O</Badge>
           {room.phase === 'playing' && <Badge tone="red">Đang đấu</Badge>}
         </div>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-        {room.mode === 'team' ? (
-          <div className="relative grid gap-6 sm:grid-cols-2">
-            <TeamColumn room={room} team="red" myId={myId} isHost={isHost} />
-            <div className="pointer-events-none absolute top-1/2 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-1/2 sm:block">
-              <Burst text="VS" size={90} />
+        <div className="flex min-w-0 flex-col gap-6">
+          {room.mode === 'team' ? (
+            <div className="relative grid gap-6 sm:grid-cols-2">
+              <TeamColumn room={room} team="red" myId={myId} isHost={isHost} />
+              <div className="pointer-events-none absolute top-1/2 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-1/2 sm:block">
+                <Burst text="VS" size={90} />
+              </div>
+              <TeamColumn room={room} team="blue" myId={myId} isHost={isHost} />
             </div>
-            <TeamColumn room={room} team="blue" myId={myId} isHost={isHost} />
-          </div>
-        ) : (
-          <section className="sk shadow-ink overflow-hidden bg-paper-3">
-            <header className="flex items-center justify-between border-b-[2.5px] border-ink bg-marker px-4 py-2 text-on-marker">
-              <h2 className="font-display">Hỗn chiến · ai cũng là địch</h2>
-              <span className="font-display text-sm tabular-nums">
-                {room.members.length}/{room.max}
-              </span>
-            </header>
-            <ul className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-4">
-              {Array.from({ length: room.max }).map((_, i) => {
-                const m = room.members[i];
-                return m ? <MemberCard key={m.id} m={m} room={room} myId={myId} isHost={isHost} i={i} /> : <EmptySlot key={`e${i}`} />;
-              })}
-            </ul>
-          </section>
-        )}
+          ) : (
+            <section className="sk shadow-ink overflow-hidden bg-paper-3">
+              <header className="flex items-center justify-between border-b-[2.5px] border-ink bg-marker px-4 py-2 text-on-marker">
+                <h2 className="font-display">Hỗn chiến · ai cũng là địch</h2>
+                <span className="font-display text-sm tabular-nums">
+                  {room.members.length}/{room.max}
+                </span>
+              </header>
+              <ul className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-4">
+                {Array.from({ length: room.max }).map((_, i) => {
+                  const m = room.members[i];
+                  return m ? <MemberCard key={m.id} m={m} room={room} myId={myId} isHost={isHost} i={i} /> : <EmptySlot key={`e${i}`} />;
+                })}
+              </ul>
+            </section>
+          )}
+          <MapPanel room={room} isHost={isHost} />
+        </div>
 
         <div className="flex flex-col gap-6">
           <Panel title="Trò chuyện" className="flex h-80 flex-col">
@@ -328,5 +331,23 @@ function MemberCard({
         {m.bot ? 'Bot' : m.id === room.hostId ? 'Chủ phòng' : m.ready ? 'Sẵn sàng' : 'Đang chọn…'}
       </Badge>
     </li>
+  );
+}
+
+function MapPanel({ room, isHost }: { room: RoomView; isHost: boolean }) {
+  const editable = isHost && room.phase === 'waiting';
+  return (
+    <Panel
+      title="Bản đồ"
+      action={<span className="text-sm text-ink-soft">{editable ? 'Bấm để đổi' : isHost ? 'Khoá trong lúc đấu' : 'Chủ phòng chọn'}</span>}
+    >
+      {isHost ? (
+        <MapPicker value={room.map} compact disabled={!editable} onChange={(map) => net.send({ t: 'map', map })} />
+      ) : (
+        <div className="max-w-sm">
+          <MapCard choice={room.map} selected={false} disabled />
+        </div>
+      )}
+    </Panel>
   );
 }

@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
-import { useLocation, useParams } from 'wouter';
-import { ArrowBigLeft, ArrowBigRight, ArrowBigUp, Pause, Wifi } from 'lucide-react';
+import { useLocation, useParams, useSearch } from 'wouter';
+import { ArrowBigLeft, ArrowBigRight, ArrowBigUp, ArrowLeft, Pause, Wifi, Wind } from 'lucide-react';
 import {
   DT,
-  GROUND,
   H,
-  PLATFORMS,
+  MAPS,
+  MAP_IDS,
+  MATCH_SEC,
   W,
   ATTACK,
+  matchTime,
+  nextGust,
+  resolveMapChoice,
+  type KoCause,
+  type MapChoice,
+  type MapId,
   botInput,
   createMatch,
   newBrain,
@@ -25,6 +32,7 @@ import { Bar, Burst, Button, Head, IconButton, Kbd, Modal, hpColor } from '@/com
 import { BOTS } from '@/lib/mock';
 import { setLastResult, useStore, type MatchResult, type Profile } from '@/lib/store';
 import { cn, formatTime } from '@/lib/utils';
+import { ArenaScene, MapPicker, mapLabel } from '@/lib/maps';
 import { net, takeInput, useNet, type InputState, type MatchView } from '@/net/client';
 
 const FIG_K = 0.85; // viewBox → world scale
@@ -42,11 +50,11 @@ class LocalSource implements MatchSource {
   readonly m: Match;
   private brains = new Map<string, BotBrain>();
   private acc = 0;
-  constructor(profile: Profile) {
+  constructor(profile: Profile, map: MapId) {
     this.m = createMatch('team', [
       { id: 'me', name: profile.name, color: profile.color, accessory: profile.accessory, weapon: profile.weapon, team: 'red', bot: false },
       ...BOTS.slice(0, 5).map((b, i) => ({ ...b, id: `bot${i}`, team: i < 2 ? 'red' : 'blue', bot: true })),
-    ]);
+    ], MATCH_SEC, map);
     for (const f of this.m.fighters) if (f.bot) this.brains.set(f.id, newBrain());
     this.m.fighters[0]!.energy = 60;
   }
@@ -63,12 +71,13 @@ class LocalSource implements MatchSource {
   }
   view(): MatchView {
     const m = this.m;
-    return { mode: m.mode, meId: 'me', fighters: m.fighters, score: m.score, timeLeft: m.timeLeft, intro: m.intro };
+    return { mode: m.mode, map: m.map, t: matchTime(m.tick), meId: 'me', fighters: m.fighters, score: m.score, timeLeft: m.timeLeft, intro: m.intro };
   }
   result(): MatchResult {
     const m = this.m;
     return {
       mode: m.mode,
+      map: m.map,
       winner: m.winner ?? 'draw',
       score: { ...m.score },
       durationSec: Math.round(m.duration - m.timeLeft),
@@ -101,8 +110,8 @@ function poseOf(f: Fighter): Pose {
 
 const emptyInput = (): InputState => ({ left: false, right: false, jump: false, block: false, punch: false, kick: false, super: false });
 
-type Popup = { id: number; x: number; y: number; text: string; at: number; big: boolean; block: boolean };
-type Feed = { id: number; killer: string; victim: string; kTeam: string; vTeam: string; at: number };
+type Popup = { id: number; x: number; y: number; text: string; at: number; big: boolean; block: boolean; burn?: boolean };
+type Feed = { id: number; killer: string; victim: string; kTeam: string; vTeam: string; how: KoCause; at: number };
 type Wave = { id: number; x: number; y: number; at: number };
 
 function winnerLabel(mode: 'team' | 'ffa', winner: string, nameOf: (id: string) => string) {
@@ -115,6 +124,51 @@ function winnerLabel(mode: 'team' | 'ffa', winner: string, nameOf: (id: string) 
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 export default function Play({ online = false }: { online?: boolean }) {
+  const search = useSearch();
+  const q = new URLSearchParams(search).get('map');
+  const offlineMap = (MAP_IDS as readonly string[]).includes(q ?? '') ? (q as MapId) : null;
+  if (!online && !offlineMap) return <OfflineSetup />;
+  return <Arena online={online} offlineMap={offlineMap ?? 'notebook'} key={offlineMap ?? 'online'} />;
+}
+
+/** Offline: pick an arena before fighting the bots. */
+function OfflineSetup() {
+  const [, nav] = useLocation();
+  const [choice, setChoice] = useState<MapChoice>(() => {
+    try {
+      return (localStorage.getItem('qc.lastMap') as MapChoice | null) ?? 'notebook';
+    } catch {
+      return 'notebook';
+    }
+  });
+  const start = () => {
+    try {
+      localStorage.setItem('qc.lastMap', choice);
+    } catch {
+      /* ignore */
+    }
+    nav(`/play?map=${resolveMapChoice(choice)}`);
+  };
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <Button size="sm" onClick={() => nav('/lobby')} aria-label="Về sảnh">
+          <ArrowLeft size={16} strokeWidth={3} />
+        </Button>
+        <div>
+          <h1 className="font-display text-3xl">Chọn bản đồ</h1>
+          <p className="text-lg text-ink-soft">Đấu đồng đội 3 đấu 3 với bot, không cần mạng.</p>
+        </div>
+        <Button variant="red" size="lg" className="ml-auto" onClick={start}>
+          Vào trận · {mapLabel(choice)}
+        </Button>
+      </div>
+      <MapPicker value={choice} onChange={setChoice} />
+    </div>
+  );
+}
+
+function Arena({ online, offlineMap }: { online: boolean; offlineMap: MapId }) {
   const [, nav] = useLocation();
   const params = useParams<{ id?: string }>();
   const { profile, settings } = useStore();
@@ -124,7 +178,7 @@ export default function Play({ online = false }: { online?: boolean }) {
   const netStatus = useNet((s) => s.status);
   const ping = useNet((s) => s.ping);
 
-  const local = useMemo(() => (online ? null : new LocalSource(profile)), [online]); // eslint-disable-line react-hooks/exhaustive-deps
+  const local = useMemo(() => (online ? null : new LocalSource(profile, offlineMap)), [online, offlineMap]); // eslint-disable-line react-hooks/exhaustive-deps
   const source: MatchSource | null = online ? netMatch : local;
 
   const input = useRef<InputState>(emptyInput());
@@ -207,10 +261,12 @@ export default function Play({ online = false }: { online?: boolean }) {
           text: e.blocked ? 'CHẶN!' : e.big ? 'SIÊU CẤP!' : HIT_WORDS[Math.floor(Math.random() * HIT_WORDS.length)]!,
         });
         if (e.v === v.meId && !e.blocked && shakeRef.current) setShakeKey((k) => k + 1);
+      } else if (e.k === 'burn') {
+        popups.current.push({ id: uid.current++, x: e.x, y: e.y, at: clock, big: false, block: false, burn: true, text: 'XÈO!' });
       } else if (e.k === 'ko') {
-        const a = byId(e.a);
+        const a = e.a ? byId(e.a) : undefined;
         const b = byId(e.v);
-        feed.current.unshift({ id: uid.current++, killer: a?.name ?? '?', victim: b?.name ?? '?', kTeam: a?.team ?? '', vTeam: b?.team ?? '', at: clock });
+        feed.current.unshift({ id: uid.current++, killer: a?.name ?? '', victim: b?.name ?? '?', kTeam: a?.team ?? '', vTeam: b?.team ?? '', how: e.how, at: clock });
         feed.current = feed.current.slice(0, 5);
       } else if (e.k === 'super') {
         waves.current.push({ id: uid.current++, x: e.x, y: e.y, at: clock });
@@ -309,8 +365,9 @@ export default function Play({ online = false }: { online?: boolean }) {
             {v.mode === 'team' && <TeamScore team="blue" value={v.score.blue ?? 0} />}
           </div>
           <div className="hidden text-sm text-ink-soft sm:block">
-            {v.mode === 'team' ? `Đội đầu tiên đạt ${winScore('team')} K.O thắng` : `Hỗn chiến · ai đạt ${winScore('ffa')} K.O trước thắng`}
+            {MAPS[v.map].name} · {v.mode === 'team' ? `đội đầu tiên đạt ${winScore('team')} K.O thắng` : `ai đạt ${winScore('ffa')} K.O trước thắng`}
           </div>
+          <WindAlert map={v.map} t={v.t} intro={v.intro} />
         </div>
         <div className="order-1 flex items-start justify-end gap-2 sm:order-3 sm:flex-1">
           <KillFeed items={feed.current} />
@@ -333,7 +390,7 @@ export default function Play({ online = false }: { online?: boolean }) {
         className={cn('sk shadow-ink-lg relative overflow-hidden bg-paper-3', shakeKey > 0 && 'anim-shake')}
         style={{ width: 'min(100%, 1100px, calc((100dvh - 230px) * 1000 / 560))', aspectRatio: `${W} / ${H}` }}
       >
-        <ArenaBackdrop />
+        <ArenaScene mapId={v.map} t={v.t} className="absolute inset-0" />
         {waves.current.map((w) => {
           const t = (clock - w.at) / 0.6;
           return (
@@ -361,7 +418,7 @@ export default function Play({ online = false }: { online?: boolean }) {
               className="anim-pop pointer-events-none absolute"
               style={{ left: `${(p.x / W) * 100}%`, top: `${(p.y / H) * 100}%`, translate: '-50% -50%', width: p.big ? '16%' : '9%' }}
             >
-              <Burst text={p.text} className="h-auto w-full" color={p.block ? 'var(--paper-3)' : p.big ? 'var(--crimson)' : 'var(--marker)'} />
+              <Burst text={p.text} className="h-auto w-full" color={p.burn ? '#f2802e' : p.block ? 'var(--paper-3)' : p.big ? 'var(--crimson)' : 'var(--marker)'} />
             </div>
           ))}
 
@@ -455,38 +512,6 @@ export default function Play({ online = false }: { online?: boolean }) {
 /* ------------------------------------------------------------------ */
 /* Arena pieces                                                        */
 /* ------------------------------------------------------------------ */
-function ArenaBackdrop() {
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full" aria-hidden>
-      <defs>
-        <pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2="10" stroke="var(--ink)" strokeWidth="2" opacity="0.25" />
-        </pattern>
-      </defs>
-      {Array.from({ length: 17 }).map((_, i) => (
-        <line key={i} x1="0" x2={W} y1={i * 32 + 16} y2={i * 32 + 16} stroke="var(--rule)" strokeWidth="1.5" />
-      ))}
-      <circle cx="880" cy="80" r="38" fill="var(--marker)" stroke="var(--ink)" strokeWidth="3" />
-      <path d="M90 90 q 25 -30 55 -6 q 25 -24 50 2 q 18 22 -12 26 h -86 q -30 -6 -7 -22z" fill="var(--paper-3)" stroke="var(--ink)" strokeWidth="3" />
-      <path d="M520 70 q 18 -22 42 -5 q 18 -16 36 2 q 12 16 -10 19 h -62 q -22 -5 -6 -16z" fill="var(--paper-3)" stroke="var(--ink)" strokeWidth="3" />
-      {PLATFORMS.map((p, i) => (
-        <g key={i}>
-          <path
-            d={`M${p.x1 - 6} ${p.y} Q ${(p.x1 + p.x2) / 2} ${p.y - 5} ${p.x2 + 6} ${p.y} L ${p.x2} ${p.y + 22} Q ${(p.x1 + p.x2) / 2} ${p.y + 18} ${p.x1} ${p.y + 22} Z`}
-            fill="var(--paper-2)"
-            stroke="var(--ink)"
-            strokeWidth="3.5"
-            strokeLinejoin="round"
-          />
-          <rect x={p.x1 + 4} y={p.y + 4} width={p.x2 - p.x1 - 8} height="14" fill="url(#hatch)" />
-        </g>
-      ))}
-      <path d={`M0 ${GROUND} Q ${W / 2} ${GROUND - 6} ${W} ${GROUND} L ${W} ${H} L 0 ${H} Z`} fill="var(--paper-2)" stroke="var(--ink)" strokeWidth="4" />
-      <rect x="0" y={GROUND + 6} width={W} height={H - GROUND} fill="url(#hatch)" />
-    </svg>
-  );
-}
-
 const teamColor = (mode: 'team' | 'ffa', team: string, color: string) =>
   mode === 'ffa' ? color : team === 'red' ? 'var(--crimson)' : 'var(--cobalt)';
 
@@ -567,14 +592,32 @@ function TeamScore({ team, value }: { team: 'red' | 'blue'; value: number }) {
 
 const feedColor = (team: string) => (team === 'red' ? 'text-crimson' : team === 'blue' ? 'text-cobalt' : '');
 
+const KO_LABEL: Record<KoCause, string> = { hit: 'hạ gục', fall: 'đẩy xuống vực', lava: 'đẩy vào dung nham' };
+
+/** Rooftop gusts: warn a few seconds ahead, then show the direction while blowing. */
+function WindAlert({ map, t, intro }: { map: MapId; t: number; intro: number }) {
+  const g = nextGust(MAPS[map], t);
+  if (!g || intro > 0 || g.inSec > 3) return null;
+  const arrow = g.dir > 0 ? '→' : '←';
+  return (
+    <div className={cn('sk inline-flex items-center gap-1.5 px-2 py-0.5 text-sm', g.inSec === 0 ? 'bg-cobalt text-on-accent anim-wobble' : 'bg-marker text-on-marker')} role="status">
+      <Wind size={15} strokeWidth={3} />
+      {g.inSec === 0 ? `Gió đang thổi ${arrow}` : `Gió ${arrow} sau ${Math.ceil(g.inSec)}s`}
+    </div>
+  );
+}
+
 function KillFeed({ items }: { items: Feed[] }) {
   return (
     <ul className="hidden w-60 space-y-1 md:block" aria-live="polite">
       {items.map((k) => (
         <li key={k.id} className="anim-slide-in sk flex items-center justify-end gap-1.5 bg-paper-3/90 px-2 py-0.5 text-sm">
-          <b className={cn('truncate', feedColor(k.kTeam))}>{k.killer}</b>
-          <span aria-label="hạ gục">👊</span>
+          {k.killer && <b className={cn('truncate', feedColor(k.kTeam))}>{k.killer}</b>}
+          <span aria-label={KO_LABEL[k.how]} title={KO_LABEL[k.how]}>
+            {k.how === 'fall' ? '🕳️' : k.how === 'lava' ? '🔥' : '👊'}
+          </span>
           <span className={cn('truncate line-through decoration-2', feedColor(k.vTeam))}>{k.victim}</span>
+          {!k.killer && <span className="text-ink-soft">{k.how === 'fall' ? 'rơi vực' : 'bị nướng'}</span>}
         </li>
       ))}
     </ul>

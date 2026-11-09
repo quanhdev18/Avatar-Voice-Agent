@@ -1,5 +1,5 @@
 import { useLocation } from 'wouter';
-import { RotateCcw, Users, Star as StarIcon } from 'lucide-react';
+import { Map as MapIcon, RotateCcw, Users, Star as StarIcon } from 'lucide-react';
 
 import { Page } from '@/components/Layout';
 import { StickFigure } from '@/components/StickFigure';
@@ -7,12 +7,14 @@ import { Badge, Bar, Button, Panel, Star } from '@/components/ui';
 import { BOTS } from '@/lib/mock';
 import { getLastResult, useStore, type MatchResult } from '@/lib/store';
 import { cn, formatTime } from '@/lib/utils';
+import { mapLabel } from '@/lib/maps';
 
 function sampleResult(name: string, color: string): MatchResult {
   const teams = ['red', 'red', 'red', 'blue', 'blue', 'blue'] as const;
   const kos = [4, 3, 3, 2, 2, 1];
   return {
     mode: 'team',
+    map: 'notebook',
     winner: 'red',
     score: { red: 10, blue: 5 },
     durationSec: 142,
@@ -46,7 +48,7 @@ export default function Results() {
     <Page>
       <div className="text-center">
         <Badge tone={r.winner === 'red' ? 'red' : r.winner === 'blue' ? 'blue' : 'yellow'}>
-          Trận đấu · {formatTime(r.durationSec)}
+          {mapLabel(r.map)} · {formatTime(r.durationSec)}
         </Badge>
         <h1
           className={cn(
@@ -148,12 +150,17 @@ export default function Results() {
             <Bar className="mt-4" label={`Cấp ${profile.level} → ${profile.level + 1}`} value={Math.min(1000, profile.xp + xpGain)} max={1000} showValue color="var(--cobalt)" />
           </Panel>
           <div className="grid grid-cols-2 gap-4">
-            <Button variant="red" size="lg" onClick={() => nav(online ? `/room/${r.roomId}` : '/play')}>
+            <Button variant="red" size="lg" onClick={() => nav(online ? `/room/${r.roomId}` : `/play?map=${r.map}`)}>
               <RotateCcw size={18} strokeWidth={3} /> {online ? 'Về phòng' : 'Đấu lại'}
             </Button>
             <Button variant="blue" size="lg" onClick={() => nav('/lobby')}>
               <Users size={18} strokeWidth={3} /> Về sảnh
             </Button>
+            {!online && (
+              <Button size="md" className="col-span-2" onClick={() => nav('/play')}>
+                <MapIcon size={18} strokeWidth={3} /> Đổi bản đồ
+              </Button>
+            )}
           </div>
         </div>
       </div>

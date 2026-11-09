@@ -13,7 +13,9 @@ import {
   type FighterSnap,
   type GameEvent,
   type Input,
-  type MapId,
+  type MapChoice,
+  resolveMapChoice,
+  MAPS,
   type Match,
   type MatchResultMsg,
   type Mode,
@@ -44,7 +46,8 @@ export class Room {
   readonly id: string;
   readonly name: string;
   readonly mode: Mode;
-  readonly map: MapId;
+  /** what the host picked ('random' resolves when a match starts) */
+  map: MapChoice;
   readonly max: number;
   private readonly password: string | undefined;
 
@@ -62,7 +65,7 @@ export class Room {
   private botSeq = 0;
 
   constructor(
-    opts: { id: string; name: string; mode: Mode; map: MapId; max: number; password?: string; host: Player },
+    opts: { id: string; name: string; mode: Mode; map: MapChoice; max: number; password?: string; host: Player },
     private readonly onChange: (room: Room) => void,
   ) {
     this.id = opts.id;
@@ -110,7 +113,7 @@ export class Room {
     this.system(`${p.profile.name} đã vào phòng`);
     if (this.match) {
       addFighter(this.match, this.rosterEntry(p.id)!);
-      p.send({ t: 'start', mode: this.mode, map: this.map, roster: this.roster() });
+      p.send({ t: 'start', mode: this.mode, map: this.match.map, roster: this.roster() });
       this.broadcast({ t: 'roster', roster: this.roster() });
     }
     this.changed();
@@ -174,6 +177,14 @@ export class Room {
     }
   }
 
+  setMap(by: Player, map: MapChoice) {
+    if (by.id !== this.hostId) return by.error('not_host', 'Chỉ chủ phòng mới đổi được bản đồ');
+    if (this.phase !== 'waiting' || this.map === map) return;
+    this.map = map;
+    this.system(`Bản đồ: ${map === 'random' ? 'Ngẫu nhiên' : MAPS[map].name}`);
+    this.changed();
+  }
+
   say(p: Player, text: string) {
     const now = Date.now();
     if (now - p.lastChatAt < 600) return p.error('slow_down', 'Nhắn chậm thôi');
@@ -226,16 +237,16 @@ export class Room {
     this.countdownTimer = null;
     this.phase = 'playing';
     const roster = this.roster();
-    this.match = createMatch(this.mode, roster, MATCH_SECONDS);
+    this.match = createMatch(this.mode, roster, MATCH_SECONDS, resolveMapChoice(this.map));
     for (const p of this.players.values()) {
       p.inputs = [];
       p.lastInput = NO_INPUT;
       p.ack = 0;
       p.lastSeqSeen = 0;
     }
-    this.broadcast({ t: 'start', mode: this.mode, map: this.map, roster });
+    this.broadcast({ t: 'start', mode: this.mode, map: this.match.map, roster });
     this.loop = setInterval(() => this.tick(), 1000 / TICK_RATE);
-    logger.info({ room: this.id, players: this.players.size, bots: this.bots.size }, 'match started');
+    logger.info({ room: this.id, players: this.players.size, bots: this.bots.size, map: this.match.map }, 'match started');
     this.changed();
   }
 
@@ -277,6 +288,9 @@ export class Room {
       vy: r1(f.vy),
       f: f.facing,
       g: f.onGround,
+      p: f.plat,
+      jh: f.jumpHeld,
+      aj: f.airJumps,
       hp: r1(f.hp),
       en: r1(f.energy),
       a: f.action,
@@ -308,6 +322,7 @@ export class Room {
     const result: MatchResultMsg = {
       winner: m.winner ?? 'draw',
       mode: this.mode,
+      map: m.map,
       score: m.score,
       durationSec: Math.round(m.duration - m.timeLeft),
       players: m.fighters.map((f) => ({

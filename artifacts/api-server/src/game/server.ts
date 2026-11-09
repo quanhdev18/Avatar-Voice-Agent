@@ -184,6 +184,8 @@ export class GameServer {
         return room?.setReady(p, msg.ready);
       case 'chat':
         return room?.say(p, msg.text);
+      case 'map':
+        return room?.setMap(p, msg.map);
       case 'addBot':
         return room?.addBot(p);
       case 'kick':

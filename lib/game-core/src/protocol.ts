@@ -6,14 +6,14 @@
 import { z } from 'zod/v4';
 
 import { ACCESSORIES, COLOR_VALUES, WEAPONS, type Accessory, type Weapon } from './cosmetics';
+import { MAP_IDS, type MapChoice, type MapId } from './maps';
 import type { GameEvent, Mode, RosterEntry } from './sim';
 
 export const GAME_WS_PATH = '/api/game/ws';
 export const PROTOCOL_VERSION = 1;
 export const MAX_MESSAGE_BYTES = 2048;
 
-export const MAP_IDS = ['notebook', 'rooftop', 'volcano', 'dojo'] as const;
-export type MapId = (typeof MAP_IDS)[number];
+export const MapChoiceSchema = z.enum([...MAP_IDS, 'random']);
 
 /** Control, zero-width and bidi-override characters. */
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;
@@ -42,7 +42,7 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
     t: z.literal('create'),
     name: cleanText(32),
     mode: z.enum(['team', 'ffa']),
-    map: z.enum(MAP_IDS),
+    map: MapChoiceSchema,
     max: z.union([z.literal(2), z.literal(4), z.literal(6), z.literal(8)]),
     password: z.string().max(32).optional(),
   }),
@@ -53,6 +53,8 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('ready'), ready: z.boolean() }),
   z.object({ t: z.literal('chat'), text: cleanText(120) }),
   z.object({ t: z.literal('addBot') }),
+  /** host changes the arena between matches */
+  z.object({ t: z.literal('map'), map: MapChoiceSchema }),
   z.object({ t: z.literal('kick'), id: z.string().max(16) }),
   z.object({ t: z.literal('start') }),
   /** s = input sequence number, b = packed input bits */
@@ -71,7 +73,7 @@ export type RoomSummary = {
   name: string;
   host: string;
   mode: Mode;
-  map: MapId;
+  map: MapChoice;
   players: number;
   max: number;
   phase: RoomPhase;
@@ -93,7 +95,7 @@ export type RoomView = {
   id: string;
   name: string;
   mode: Mode;
-  map: MapId;
+  map: MapChoice;
   max: number;
   locked: boolean;
   hostId: string;
@@ -112,6 +114,11 @@ export type FighterSnap = {
   vy: number;
   f: 1 | -1;
   g: boolean;
+  /** platform index stood on (-1 floor/air) */
+  p: number;
+  /** jump held / air jumps left */
+  jh: boolean;
+  aj: number;
   hp: number;
   en: number;
   a: 'none' | 'punch' | 'kick' | 'block' | 'super';
@@ -140,6 +147,7 @@ export type Snapshot = {
 export type MatchResultMsg = {
   winner: string;
   mode: Mode;
+  map: MapId;
   score: Record<string, number>;
   durationSec: number;
   players: (RosterEntry & { kos: number; falls: number; damage: number })[];

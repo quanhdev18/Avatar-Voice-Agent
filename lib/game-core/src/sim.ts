@@ -4,15 +4,7 @@
  * All state is plain data so it can be cloned and sent over the wire.
  */
 import type { Accessory, Weapon } from './cosmetics';
-
-export const W = 1000;
-export const H = 560;
-export const GROUND = 470;
-export const PLATFORMS = [
-  { x1: 140, x2: 360, y: 340 },
-  { x1: 640, x2: 860, y: 340 },
-  { x1: 400, x2: 600, y: 215 },
-] as const;
+import { GROUND, H, LAVA_Y, getMap, inSpan, platformAt, windAt, type MapDef, type MapId } from './maps';
 
 export const TICK_RATE = 30;
 export const DT = 1 / TICK_RATE;
@@ -23,6 +15,11 @@ export const RESPAWN_SEC = 3;
 const GRAVITY = 1700;
 const SPEED = 260;
 const JUMP = 720;
+const AIR_JUMP = 640;
+const LAVA_DPS = 30;
+const LAVA_BOUNCE = 680;
+/** a fall or lava K.O. is credited to whoever hit you within this many seconds */
+const CREDIT_SEC = 5;
 
 export type Mode = 'team' | 'ffa';
 export const TEAMS = ['red', 'blue'] as const;
@@ -61,6 +58,11 @@ export type Fighter = {
   vy: number;
   facing: 1 | -1;
   onGround: boolean;
+  /** index of the platform stood on, -1 for the floor / air */
+  plat: number;
+  /** jump key was held last tick (jumps trigger on press, not hold) */
+  jumpHeld: boolean;
+  airJumps: number;
   hp: number;
   energy: number;
   action: Action;
@@ -72,6 +74,9 @@ export type Fighter = {
   kos: number;
   falls: number;
   damage: number;
+  lastHitBy: string;
+  lastHitT: number;
+  burnT: number;
 };
 
 export type Input = {
@@ -112,13 +117,18 @@ export function unpackInput(b: number): Input {
 /** The same input with one-shot attack presses removed (used when repeating a held input). */
 export const heldOnly = (i: Input): Input => ({ ...i, punch: false, kick: false, super: false });
 
+export type KoCause = 'hit' | 'fall' | 'lava';
+
 export type GameEvent =
   | { k: 'hit'; a: string; v: string; x: number; y: number; blocked: boolean; big: boolean }
-  | { k: 'ko'; a: string; v: string }
-  | { k: 'super'; a: string; x: number; y: number };
+  /** a = attacker id, or '' for a self-inflicted fall / burn */
+  | { k: 'ko'; a: string; v: string; how: KoCause }
+  | { k: 'super'; a: string; x: number; y: number }
+  | { k: 'burn'; v: string; x: number; y: number };
 
 export type Match = {
   mode: Mode;
+  map: MapId;
   /** match length in seconds */
   duration: number;
   tick: number;
@@ -130,6 +140,9 @@ export type Match = {
   /** team id (or fighter id in ffa), 'draw', or null while running */
   winner: string | null;
 };
+
+/** Seconds since the match was created; drives moving platforms and wind. */
+export const matchTime = (tick: number) => tick * DT;
 
 export type RosterEntry = {
   id: string;
@@ -144,18 +157,14 @@ export type RosterEntry = {
 /* ------------------------------------------------------------------ */
 /* Setup                                                               */
 /* ------------------------------------------------------------------ */
-export function spawnPos(mode: Mode, team: string, spawn: number): { x: number; y: number; facing: 1 | -1 } {
-  if (mode === 'team') {
-    const red = team === 'red';
-    return { x: red ? 90 + (spawn % 4) * 60 : W - 90 - (spawn % 4) * 60, y: GROUND, facing: red ? 1 : -1 };
-  }
-  const slots = [80, 920, 250, 750, 420, 580, 160, 840];
-  const x = slots[spawn % slots.length]!;
-  return { x, y: GROUND, facing: x < W / 2 ? 1 : -1 };
+export function spawnPos(mode: Mode, map: MapDef, team: string, spawn: number): { x: number; y: number; facing: 1 | -1 } {
+  const list = mode === 'team' ? (team === 'red' ? map.spawns.red : map.spawns.blue) : map.spawns.ffa;
+  const x = list[spawn % list.length]!;
+  return { x, y: GROUND, facing: x < 500 ? 1 : -1 };
 }
 
-export function createMatch(mode: Mode, roster: RosterEntry[], duration = MATCH_SEC): Match {
-  const m: Match = { mode, duration, tick: 0, timeLeft: duration, intro: INTRO_SEC, fighters: [], score: {}, ended: false, winner: null };
+export function createMatch(mode: Mode, roster: RosterEntry[], duration = MATCH_SEC, map: MapId = 'notebook'): Match {
+  const m: Match = { mode, map, duration, tick: 0, timeLeft: duration, intro: INTRO_SEC, fighters: [], score: {}, ended: false, winner: null };
   for (const r of roster) addFighter(m, r);
   return m;
 }
@@ -165,7 +174,7 @@ export function addFighter(m: Match, r: RosterEntry): Fighter {
   const used = new Set(m.fighters.filter((f) => m.mode === 'ffa' || f.team === team).map((f) => f.spawn));
   let spawn = 0;
   while (used.has(spawn)) spawn++;
-  const p = spawnPos(m.mode, team, spawn);
+  const p = spawnPos(m.mode, getMap(m.map), team, spawn);
   const f: Fighter = {
     ...r,
     team,
@@ -176,6 +185,9 @@ export function addFighter(m: Match, r: RosterEntry): Fighter {
     vy: 0,
     facing: p.facing,
     onGround: true,
+    plat: -1,
+    jumpHeld: false,
+    airJumps: 1,
     hp: 100,
     energy: 0,
     action: 'none',
@@ -187,6 +199,9 @@ export function addFighter(m: Match, r: RosterEntry): Fighter {
     kos: 0,
     falls: 0,
     damage: 0,
+    lastHitBy: '',
+    lastHitT: 99,
+    burnT: 0,
   };
   m.fighters.push(f);
   m.score[team] ??= 0;
@@ -200,6 +215,8 @@ export function removeFighter(m: Match, id: string) {
 /* ------------------------------------------------------------------ */
 /* Per-fighter step (movement, actions, physics — no hit resolution)   */
 /* ------------------------------------------------------------------ */
+type StepCtx = { mode: Mode; map: MapDef; t: number };
+
 function tryStart(f: Fighter, a: 'punch' | 'kick' | 'super', events: GameEvent[] | null) {
   if (f.action !== 'none' && f.action !== 'block') return;
   if (f.cooldown > 0 || f.hurtT > 0) return;
@@ -216,17 +233,25 @@ function tryStart(f: Fighter, a: 'punch' | 'kick' | 'super', events: GameEvent[]
 const attackSpec = (f: Fighter) =>
   f.action === 'punch' || f.action === 'kick' || f.action === 'super' ? ATTACK[f.action] : null;
 
-function stepFighter(m: Pick<Match, 'mode'>, f: Fighter, input: Input, dt: number, events: GameEvent[] | null) {
+function stepFighter(ctx: StepCtx, f: Fighter, input: Input, dt: number, events: GameEvent[] | null) {
+  const { map, t } = ctx;
   f.cooldown = Math.max(0, f.cooldown - dt);
   f.hurtT = Math.max(0, f.hurtT - dt);
+  f.burnT = Math.max(0, f.burnT - dt);
+  f.lastHitT += dt;
 
   if (f.koT > 0) {
     f.koT -= dt;
     f.vx *= 0.9;
     if (f.koT <= 0) {
-      const p = spawnPos(m.mode, f.team, f.spawn);
-      Object.assign(f, { koT: 0, hp: 100, x: p.x, y: 0, vx: 0, vy: 0, facing: p.facing, action: 'none', hurtT: 0, onGround: false });
+      const p = spawnPos(ctx.mode, map, f.team, f.spawn);
+      Object.assign(f, {
+        koT: 0, hp: 100, x: p.x, y: 0, vx: 0, vy: 0, facing: p.facing, action: 'none', hurtT: 0,
+        onGround: false, plat: -1, airJumps: 1, lastHitBy: '', lastHitT: 99,
+      });
     }
+    // a K.O.'d body that fell into a pit just stays down there
+    if (f.y > H + 60) return;
   } else {
     if (input.punch) tryStart(f, 'punch', events);
     if (input.kick) tryStart(f, 'kick', events);
@@ -235,47 +260,97 @@ function stepFighter(m: Pick<Match, 'mode'>, f: Fighter, input: Input, dt: numbe
     if (input.block && f.action === 'none' && f.onGround && f.hurtT <= 0) f.action = 'block';
     if (!input.block && f.action === 'block') f.action = 'none';
 
+    const pressedJump = input.jump && !f.jumpHeld;
     const busy = f.hurtT > 0 || (f.action !== 'none' && f.action !== 'block');
     if (!busy) {
       const speed = f.action === 'block' ? SPEED * 0.25 : SPEED;
       f.vx += (input.move * speed - f.vx) * Math.min(1, dt * 14);
       if (input.move) f.facing = input.move;
-      if (input.jump && f.onGround) {
+      if (pressedJump && f.onGround) {
         f.vy = -JUMP;
         f.onGround = false;
+        f.plat = -1;
         if (f.action === 'block') f.action = 'none';
+      } else if (pressedJump && f.airJumps > 0) {
+        // one extra jump in the air — the way back from a pit edge
+        f.vy = -AIR_JUMP;
+        f.airJumps--;
       }
     } else {
       f.vx *= Math.pow(0.02, dt);
     }
     if (attackSpec(f)) f.actionT += dt;
   }
+  f.jumpHeld = input.jump;
 
-  // physics
+  /* ---------------- physics ---------------- */
+  // ride a moving platform
+  if (f.onGround && f.plat >= 0) {
+    const p = map.platforms[f.plat];
+    if (p?.move) {
+      const a = platformAt(p, t - dt);
+      const b = platformAt(p, t);
+      f.x += b.x1 - a.x1;
+      f.y = b.y;
+    }
+  }
+  // wind gusts (weaker while braced on the ground)
+  const wind = windAt(map, t);
+  if (wind && f.koT <= 0) f.x += wind * dt * (f.onGround ? (f.action === 'block' ? 0.25 : 0.7) : 1);
+
+  const prevX = f.x;
   const prevY = f.y;
   f.vy += GRAVITY * dt;
   f.x += f.vx * dt;
   f.y += f.vy * dt;
   f.onGround = false;
-  if (f.y >= GROUND) {
-    f.y = GROUND;
-    f.vy = 0;
-    f.onGround = true;
-  } else if (f.vy > 0) {
-    for (const p of PLATFORMS) {
-      if (prevY <= p.y && f.y >= p.y && f.x >= p.x1 && f.x <= p.x2) {
-        f.y = p.y;
+
+  // pit walls: once below the floor line you can't walk into the building side
+  if (prevY > GROUND + 2 && inSpan(map.ground, f.x)) {
+    f.x = prevX;
+    f.vx = 0;
+  }
+
+  if (f.vy >= 0) {
+    // floor
+    if (prevY <= GROUND + 1 && f.y >= GROUND && inSpan(map.ground, f.x)) {
+      f.y = GROUND;
+      f.vy = 0;
+      f.onGround = true;
+      f.plat = -1;
+    }
+    // platforms (one-way, land from above)
+    for (let i = 0; i < map.platforms.length; i++) {
+      const now = platformAt(map.platforms[i]!, t);
+      const before = platformAt(map.platforms[i]!, t - dt);
+      if (prevY <= Math.max(now.y, before.y) + 1 && f.y >= now.y && f.x >= now.x1 && f.x <= now.x2) {
+        f.y = now.y;
         f.vy = 0;
         f.onGround = true;
+        f.plat = i;
       }
     }
   }
-  if (f.x < 30) {
-    f.x = 30;
+  // lava: burn and bounce
+  if (f.y >= LAVA_Y && inSpan(map.lava, f.x) && f.koT <= 0) {
+    f.y = LAVA_Y;
+    f.vy = -LAVA_BOUNCE;
+    f.hp -= LAVA_DPS * 0.35;
+    f.hurtT = 0.2;
+    f.airJumps = 1;
+    if (f.burnT <= 0) {
+      f.burnT = 0.35;
+      events?.push({ k: 'burn', v: f.id, x: Math.round(f.x), y: Math.round(f.y - 100) });
+    }
+  }
+  if (f.onGround) f.airJumps = 1;
+
+  if (f.x < map.bounds.x1) {
+    f.x = map.bounds.x1;
     f.vx = Math.abs(f.vx) * 0.3;
   }
-  if (f.x > W - 30) {
-    f.x = W - 30;
+  if (f.x > map.bounds.x2) {
+    f.x = map.bounds.x2;
     f.vx = -Math.abs(f.vx) * 0.3;
   }
 }
@@ -295,11 +370,12 @@ function finishAction(f: Fighter) {
 
 /**
  * Client-side prediction for the local fighter: same movement and
- * action timing as the server, but hits are left to the server.
+ * action timing as the server, but hits and K.O.s are left to the server.
+ * `tick` is the match tick this input applies to.
  */
-export function predictStep(mode: Mode, f: Fighter, input: Input, dt = DT) {
+export function predictStep(mode: Mode, mapId: MapId, tick: number, f: Fighter, input: Input, dt = DT) {
   if (f.koT > 0) return;
-  stepFighter({ mode }, f, input, dt, null);
+  stepFighter({ mode, map: getMap(mapId), t: matchTime(tick) }, f, input, dt, null);
   if (hitDue(f)) f.hitDone = true;
   finishAction(f);
 }
@@ -307,6 +383,19 @@ export function predictStep(mode: Mode, f: Fighter, input: Input, dt = DT) {
 /* ------------------------------------------------------------------ */
 /* Whole-match step                                                     */
 /* ------------------------------------------------------------------ */
+function knockOut(m: Match, o: Fighter, how: KoCause, attackerId: string, events: GameEvent[]) {
+  o.hp = 0;
+  o.koT = RESPAWN_SEC;
+  o.action = 'none';
+  o.falls++;
+  const attacker = attackerId ? m.fighters.find((x) => x.id === attackerId && x.team !== o.team) : undefined;
+  if (attacker) {
+    attacker.kos++;
+    m.score[attacker.team] = (m.score[attacker.team] ?? 0) + 1;
+  }
+  events.push({ k: 'ko', a: attacker?.id ?? '', v: o.id, how });
+}
+
 function resolveHit(m: Match, f: Fighter, events: GameEvent[], rand: () => number) {
   f.hitDone = true;
   const action = f.action as 'punch' | 'kick' | 'super';
@@ -321,6 +410,8 @@ function resolveHit(m: Match, f: Fighter, events: GameEvent[], rand: () => numbe
     const blocked = o.action === 'block' && o.facing === -dir && action !== 'super';
     const dmg = spec.dmg * mod.dmg * (blocked ? 0.2 : 1) * (0.9 + rand() * 0.2);
     o.hp -= dmg;
+    o.lastHitBy = f.id;
+    o.lastHitT = 0;
     f.damage += dmg;
     f.energy = Math.min(100, f.energy + dmg * 1.6);
     o.energy = Math.min(100, o.energy + dmg * 0.6);
@@ -332,17 +423,10 @@ function resolveHit(m: Match, f: Fighter, events: GameEvent[], rand: () => numbe
       o.vx = dir * spec.knock;
       o.vy = action === 'super' ? -420 : -160;
       o.onGround = false;
+      o.plat = -1;
     }
     events.push({ k: 'hit', a: f.id, v: o.id, x: Math.round(o.x), y: Math.round(o.y - 110), blocked, big: action === 'super' });
-    if (o.hp <= 0) {
-      o.hp = 0;
-      o.koT = RESPAWN_SEC;
-      o.action = 'none';
-      o.falls++;
-      f.kos++;
-      m.score[f.team] = (m.score[f.team] ?? 0) + 1;
-      events.push({ k: 'ko', a: f.id, v: o.id });
-    }
+    if (o.hp <= 0) knockOut(m, o, 'hit', f.id, events);
   }
 }
 
@@ -364,9 +448,18 @@ export function stepMatch(m: Match, inputs: Record<string, Input>, dt = DT, rand
   }
   m.timeLeft = Math.max(0, m.timeLeft - dt);
 
-  for (const f of m.fighters) stepFighter(m, f, inputs[f.id] ?? NO_INPUT, dt, events);
+  const ctx: StepCtx = { mode: m.mode, map: getMap(m.map), t: matchTime(m.tick) };
+  for (const f of m.fighters) stepFighter(ctx, f, inputs[f.id] ?? NO_INPUT, dt, events);
   for (const f of m.fighters) if (hitDue(f)) resolveHit(m, f, events, rand);
   for (const f of m.fighters) finishAction(f);
+
+  // environment K.O.s: falling off the map or burning out in lava
+  for (const f of m.fighters) {
+    if (f.koT > 0) continue;
+    const credit = f.lastHitT < CREDIT_SEC ? f.lastHitBy : '';
+    if (f.y > H + 60) knockOut(m, f, 'fall', credit, events);
+    else if (f.hp <= 0) knockOut(m, f, 'lava', credit, events);
+  }
 
   const target = winScore(m.mode);
   if (m.timeLeft <= 0 || Object.values(m.score).some((s) => s >= target)) {
@@ -382,10 +475,30 @@ export function stepMatch(m: Match, inputs: Record<string, Input>, dt = DT, rand
 export type BotBrain = { t: number; move: -1 | 0 | 1; blockT: number; jumpT: number };
 export const newBrain = (): BotBrain => ({ t: Math.random(), move: 0, blockT: 0, jumpT: 0 });
 
+/** Is there floor (not pit, not lava) under x at floor level? */
+const solidAt = (map: MapDef, x: number) => inSpan(map.ground, x);
+
 export function botInput(m: Match, f: Fighter, brain: BotBrain, dt = DT, rand: () => number = Math.random): Input {
   const input: Input = { ...NO_INPUT };
   if (f.koT > 0 || m.intro > 0) return input;
-  const foes = m.fighters.filter((o) => o.team !== f.team && o.koT <= 0);
+  const map = getMap(m.map);
+  brain.t -= dt;
+  brain.blockT = Math.max(0, brain.blockT - dt);
+  brain.jumpT = Math.max(0, brain.jumpT - dt);
+
+  // In trouble (over a pit or lava while airborne): steer to safe floor and use the air jump.
+  const onFloorLevel = f.y >= GROUND - 2;
+  if (!f.onGround && !solidAt(map, f.x) && f.vy > 0) {
+    const safe = map.ground.reduce((best, s) => {
+      const cx = Math.min(Math.max(f.x, s.x1 + 30), s.x2 - 30);
+      return Math.abs(cx - f.x) < Math.abs(best - f.x) ? cx : best;
+    }, map.ground[0] ? (map.ground[0].x1 + map.ground[0].x2) / 2 : f.x);
+    input.move = safe > f.x ? 1 : -1;
+    input.jump = f.airJumps > 0 && !f.jumpHeld;
+    return input;
+  }
+
+  const foes = m.fighters.filter((o) => o.team !== f.team && o.koT <= 0 && o.y < H);
   let target: Fighter | undefined;
   let best = Infinity;
   for (const o of foes) {
@@ -395,9 +508,6 @@ export function botInput(m: Match, f: Fighter, brain: BotBrain, dt = DT, rand: (
       target = o;
     }
   }
-  brain.t -= dt;
-  brain.blockT = Math.max(0, brain.blockT - dt);
-  brain.jumpT = Math.max(0, brain.jumpT - dt);
   if (!target) return input;
 
   const dx = target.x - f.x;
@@ -420,6 +530,17 @@ export function botInput(m: Match, f: Fighter, brain: BotBrain, dt = DT, rand: (
   }
   if (attacking && Math.abs(dx) < 90 && rand() < 0.02) brain.blockT = 0.35;
   if (brain.move) input.move = brain.move;
+
+  // Edge awareness: don't walk off into a pit or lava unless the target is across it.
+  if (input.move && f.onGround && f.plat < 0 && onFloorLevel) {
+    const ahead = f.x + input.move * 45;
+    if (!solidAt(map, ahead)) {
+      const across = Math.sign(dx) === input.move && Math.abs(dx) > 120;
+      if (across && solidAt(map, f.x + input.move * 280)) brain.jumpT = 0.15;
+      else input.move = 0;
+    }
+  }
+
   input.jump = brain.jumpT > 0;
   input.block = brain.blockT > 0;
   if (input.block) input.move = 0;
