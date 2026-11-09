@@ -64,6 +64,37 @@ body,
   min-height: 100%;
 }
 
+html {
+  -webkit-tap-highlight-color: transparent;
+  /* no double-tap zoom delay on buttons */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  /* decorations that poke past the edge must never cause sideways scrolling */
+  overflow-x: clip;
+}
+
+/* respect notches / rounded corners in landscape */
+.safe-x {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+
+/* full-screen game surface on touch devices */
+.game-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
 body {
   margin: 0;
   font-family: var(--font-hand);

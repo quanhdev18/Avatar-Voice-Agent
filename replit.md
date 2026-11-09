@@ -27,6 +27,7 @@ _Replace the heading above with the project's name, and this line with one sente
   - `src/components/StickFigure.tsx` — animated SVG fighter (poses, accessories, weapons)
   - `src/components/ui.tsx` — Button, Panel, Bar, Badge, Tabs, Toggle, Slider, Modal, Burst…
   - `src/pages/*` — Home, Lobby, Room, Customize, Play (online via `/room/:id/play`, offline bots via `/play`), Results, Kit
+  - `src/components/TouchControls.tsx` — phone/tablet controls (drag pad + swipe-up jump, action cluster, multi-touch, vibration, fullscreen/landscape lock). Play picks the touch layout automatically (`Settings → Điều khiển cảm ứng` to force on/off, change button size)
   - `src/lib/maps.tsx` — per-map drawings (`ArenaScene`), thumbnails and `MapPicker`; geometry is read from game-core so visuals match collisions
   - `src/net/client.ts` — WebSocket client, lobby/room state (`useNet`), `NetMatch` (snapshot interpolation + own-fighter prediction)
   - Run: `pnpm --filter @workspace/stick-brawl run dev` (port 25224; proxies `/api` incl. WebSocket to `API_PROXY_TARGET`, default `http://localhost:8080`)
@@ -51,6 +52,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 ## Gotchas
 
 - Adding a map: add its `MapDef` to `lib/game-core/src/maps.ts` (every spawn x must be over a `ground` span), then a background in `ArenaScene` (`src/lib/maps.tsx`). Server, picker and physics pick it up automatically.
+- Play arena is sized in JS (`useBox` + ResizeObserver) to fit any screen; on touch devices controls go under the arena when that shrinks it ≤18%, otherwise they float over the bottom corners.
+- `public/manifest.webmanifest` + icons make "Add to Home Screen" open fullscreen (the only way to get fullscreen on iPhone).
 - Don't run bare `prettier --write` in the repo: there is no prettier config, so defaults would rewrite files to double quotes.
 
 _Populate as you build — sharp edges, "always run X before Y" rules._

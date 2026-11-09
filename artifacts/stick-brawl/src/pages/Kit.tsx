@@ -169,7 +169,7 @@ export default function Kit() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {POSES.map((p, i) => (
             <div key={p} className="sk bg-paper-3 p-2 text-center">
-              <StickFigure pose={p} phase={i * 0.3} className="mx-auto h-28 w-28" />
+              <StickFigure pose={p} phase={i * 0.3} className="mx-auto aspect-square w-full max-w-28" />
               <code className="text-sm">{p}</code>
             </div>
           ))}
@@ -180,7 +180,7 @@ export default function Kit() {
         <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-7">
           {ACCESSORIES.map((a) => (
             <div key={a} className="sk bg-paper-3 p-2 text-center">
-              <StickFigure accessory={a} color="var(--cobalt)" className="mx-auto h-24 w-24" />
+              <StickFigure accessory={a} color="var(--cobalt)" className="mx-auto aspect-square w-full max-w-24" />
               <div className="text-sm">{ACCESSORY_LABEL[a]}</div>
             </div>
           ))}
@@ -188,7 +188,7 @@ export default function Kit() {
         <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
           {WEAPONS.map((w) => (
             <div key={w} className="sk bg-paper-3 p-2 text-center">
-              <StickFigure weapon={w} pose="punch" color="var(--crimson)" className="mx-auto h-28 w-28" />
+              <StickFigure weapon={w} pose="punch" color="var(--crimson)" className="mx-auto aspect-square w-full max-w-28" />
               <div className="text-sm">{WEAPON_LABEL[w]}</div>
             </div>
           ))}

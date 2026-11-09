@@ -101,7 +101,7 @@ export default function Home() {
             </div>
           </div>
           <Star className="anim-wobble absolute -top-6 -right-4 h-14 w-14" />
-          <Star className="anim-wobble absolute -bottom-5 -left-5 h-10 w-10" color="var(--crimson)" />
+          <Star className="anim-wobble absolute -bottom-5 -left-2 h-10 w-10 sm:-left-5" color="var(--crimson)" />
         </div>
       </div>
 

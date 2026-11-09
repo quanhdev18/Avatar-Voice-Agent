@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import { useLocation, useParams, useSearch } from 'wouter';
-import { ArrowBigLeft, ArrowBigRight, ArrowBigUp, ArrowLeft, Pause, Wifi, Wind } from 'lucide-react';
+import { ArrowLeft, Maximize, Minimize, Pause, Wifi, Wind } from 'lucide-react';
 import {
   DT,
   H,
@@ -27,6 +27,7 @@ import {
 } from '@workspace/game-core';
 
 import { ControlsList, SettingsModal } from '@/components/Layout';
+import { ActionCluster, MovePad, canFullscreen, detectTouch, toggleFullscreen, useButtonSize, useIsFullscreen, useViewport } from '@/components/TouchControls';
 import { StickFigure, type Pose } from '@/components/StickFigure';
 import { Bar, Burst, Button, Head, IconButton, Kbd, Modal, hpColor } from '@/components/ui';
 import { BOTS } from '@/lib/mock';
@@ -36,6 +37,23 @@ import { ArenaScene, MapPicker, mapLabel } from '@/lib/maps';
 import { net, takeInput, useNet, type InputState, type MatchView } from '@/net/client';
 
 const FIG_K = 0.85; // viewBox → world scale
+const AR = W / H;
+
+/** Measure an element's content box (used to fit the arena to any screen). */
+function useBox() {
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      const r = e!.contentRect;
+      setBox((b) => (Math.abs(b.w - r.width) < 1 && Math.abs(b.h - r.height) < 1 ? b : { w: r.width, h: r.height }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return [setEl, box] as const;
+}
 const HIT_WORDS = ['BỐP!', 'HỰ!', 'BỤP!', 'RẮC!', 'ỐI!'];
 
 /* ------------------------------------------------------------------ */
@@ -194,12 +212,20 @@ function Arena({ online, offlineMap }: { online: boolean; offlineMap: MapId }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
   const [over, setOver] = useState<MatchResult | null>(null);
-  const [touch] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches);
   const menuOpen = paused || settingsOpen;
   const menuRef = useRef(menuOpen);
   menuRef.current = menuOpen;
   const shakeRef = useRef(settings.shake);
   shakeRef.current = settings.shake;
+  const vibrateRef = useRef(settings.vibrate);
+  vibrateRef.current = settings.vibrate;
+
+  const [isTouch] = useState(detectTouch);
+  const touchMode = settings.touchControls === 'on' || (settings.touchControls === 'auto' && isTouch);
+  const vp = useViewport();
+  const landscape = vp.w > vp.h;
+  const btn = useButtonSize(settings.touchSize);
+  const [stageRef, box] = useBox();
 
   /* ---------------- online: follow server state ---------------- */
   useEffect(() => {
@@ -260,7 +286,10 @@ function Arena({ online, offlineMap }: { online: boolean; offlineMap: MapId }) {
           block: e.blocked,
           text: e.blocked ? 'CHẶN!' : e.big ? 'SIÊU CẤP!' : HIT_WORDS[Math.floor(Math.random() * HIT_WORDS.length)]!,
         });
-        if (e.v === v.meId && !e.blocked && shakeRef.current) setShakeKey((k) => k + 1);
+        if (e.v === v.meId && !e.blocked) {
+          if (shakeRef.current) setShakeKey((k) => k + 1);
+          if (vibrateRef.current) navigator.vibrate?.(30);
+        }
       } else if (e.k === 'burn') {
         popups.current.push({ id: uid.current++, x: e.x, y: e.y, at: clock, big: false, block: false, burn: true, text: 'XÈO!' });
       } else if (e.k === 'ko') {
@@ -329,6 +358,7 @@ function Arena({ online, offlineMap }: { online: boolean; offlineMap: MapId }) {
 
   const leave = () => {
     if (online) net.send({ t: 'leave' });
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     nav('/lobby');
   };
 
@@ -351,44 +381,15 @@ function Arena({ online, offlineMap }: { online: boolean; offlineMap: MapId }) {
   const me = v.fighters.find((f) => f.id === v.meId);
   const nameOf = (id: string) => v.fighters.find((f) => f.id === id)?.name ?? over?.players.find((p) => p.id === id)?.name ?? '?';
 
-  return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-2 py-3 select-none">
-      {/* ---------- top HUD ---------- */}
-      <div className="flex w-full max-w-[1100px] flex-wrap items-start justify-between gap-2 sm:flex-nowrap sm:gap-3">
-        <div className="order-2 w-full sm:order-1 sm:w-auto sm:flex-1">{me && <PlayerCard f={me} />}</div>
-        <div className="order-1 flex flex-col items-center gap-1 sm:order-2">
-          <div className="flex items-stretch">
-            {v.mode === 'team' && <TeamScore team="red" value={v.score.red ?? 0} />}
-            <div className="sk z-10 -mx-1 bg-paper-3 px-2.5 py-1 text-center shadow-ink-sm sm:px-4">
-              <div className={cn('font-display text-2xl tabular-nums', v.timeLeft < 30 && 'text-crimson')}>{formatTime(v.timeLeft)}</div>
-            </div>
-            {v.mode === 'team' && <TeamScore team="blue" value={v.score.blue ?? 0} />}
-          </div>
-          <div className="hidden text-sm text-ink-soft sm:block">
-            {MAPS[v.map].name} · {v.mode === 'team' ? `đội đầu tiên đạt ${winScore('team')} K.O thắng` : `ai đạt ${winScore('ffa')} K.O trước thắng`}
-          </div>
-          <WindAlert map={v.map} t={v.t} intro={v.intro} />
-        </div>
-        <div className="order-1 flex items-start justify-end gap-2 sm:order-3 sm:flex-1">
-          <KillFeed items={feed.current} />
-          {online && (
-            <span className={cn('sk hidden items-center gap-1 bg-paper-3 px-2 py-1 text-sm tabular-nums sm:inline-flex', netStatus !== 'open' && 'text-crimson')}>
-              <Wifi size={14} strokeWidth={3} /> {netStatus === 'open' ? `${ping ?? '–'}ms` : 'mất kết nối'}
-            </span>
-          )}
-          <IconButton aria-label="Tạm dừng" onClick={() => setPaused(true)}>
-            <Pause size={18} strokeWidth={3} />
-          </IconButton>
-        </div>
-      </div>
-
-      {touch && <p className="text-center text-sm text-ink-soft landscape:hidden">↻ Xoay ngang điện thoại để chơi thoải mái hơn</p>}
-
-      {/* ---------- arena ---------- */}
+  /* ---------------- arena (shared by both layouts) ---------------- */
+  const renderArena = (size: { w: number; h: number }, hud?: ReactNode) => {
+    const big = { fontSize: Math.max(26, size.w * 0.085) };
+    const mid = { fontSize: Math.max(16, size.w * 0.04) };
+    return (
       <div
         key={shakeKey}
         className={cn('sk shadow-ink-lg relative overflow-hidden bg-paper-3', shakeKey > 0 && 'anim-shake')}
-        style={{ width: 'min(100%, 1100px, calc((100dvh - 230px) * 1000 / 560))', aspectRatio: `${W} / ${H}` }}
+        style={{ width: size.w, height: size.h }}
       >
         <ArenaScene mapId={v.map} t={v.t} className="absolute inset-0" />
         {waves.current.map((w) => {
@@ -422,28 +423,34 @@ function Arena({ online, offlineMap }: { online: boolean; offlineMap: MapId }) {
             </div>
           ))}
 
+        {hud}
+
         {v.intro > 0 && !over && (
-          <div className="absolute inset-0 grid place-items-center bg-ink/10">
-            <div key={v.intro > 0.6 ? 'a' : 'b'} className="anim-rise font-display text-5xl text-marker title-stroke sm:text-7xl">
+          <div className="pointer-events-none absolute inset-0 grid place-items-center bg-ink/10">
+            <div key={v.intro > 0.6 ? 'a' : 'b'} className="anim-rise font-display text-marker title-stroke" style={big}>
               {v.intro > 0.6 ? 'SẴN SÀNG…' : 'ĐÁNH!'}
             </div>
           </div>
         )}
         {me && me.koT > 0 && !over && (
-          <div className="absolute inset-x-0 top-1/3 text-center">
-            <div className="font-display text-3xl text-crimson title-stroke sm:text-5xl">BẠN BỊ HẠ!</div>
-            <div className="mt-2 text-xl">Hồi sinh sau {Math.ceil(me.koT)}…</div>
+          <div className="pointer-events-none absolute inset-x-0 top-1/3 text-center">
+            <div className="font-display text-crimson title-stroke" style={big}>
+              BẠN BỊ HẠ!
+            </div>
+            <div className="mt-1" style={mid}>
+              Hồi sinh sau {Math.ceil(me.koT)}…
+            </div>
           </div>
         )}
         {over && (
           <div className="absolute inset-0 grid place-items-center bg-ink/30">
             <div className="anim-rise text-center">
-              <div className="font-display text-6xl text-paper-3 title-stroke sm:text-8xl">KẾT THÚC</div>
+              <div className="font-display text-paper-3 title-stroke" style={{ fontSize: Math.max(32, size.w * 0.1) }}>
+                KẾT THÚC
+              </div>
               <div
-                className={cn(
-                  'mt-2 font-display text-2xl title-stroke',
-                  over.winner === 'red' ? 'text-crimson' : over.winner === 'blue' ? 'text-cobalt' : 'text-marker',
-                )}
+                className={cn('mt-1 font-display title-stroke', over.winner === 'red' ? 'text-crimson' : over.winner === 'blue' ? 'text-cobalt' : 'text-marker')}
+                style={mid}
               >
                 {winnerLabel(over.mode, over.winner, nameOf)}
               </div>
@@ -451,42 +458,17 @@ function Arena({ online, offlineMap }: { online: boolean; offlineMap: MapId }) {
           </div>
         )}
         {online && netStatus !== 'open' && !over && (
-          <div className="absolute inset-x-0 top-3 text-center">
+          <div className="absolute inset-x-0 top-1/4 text-center">
             <span className="sk bg-crimson px-3 py-1 text-on-accent">Mất kết nối máy chủ…</span>
           </div>
         )}
-        {showBoard && <Scoreboard fighters={v.fighters} meId={v.meId} mode={v.mode} />}
+        {showBoard && !touchMode && <Scoreboard fighters={v.fighters} meId={v.meId} mode={v.mode} />}
       </div>
+    );
+  };
 
-      {/* ---------- bottom HUD: skills + touch pad ---------- */}
-      <div className="flex w-full max-w-[1100px] flex-wrap items-end justify-center gap-3 sm:justify-between">
-        {touch ? (
-          <div className="flex gap-2">
-            <TouchBtn label="Trái" onDown={press('left')} onUp={press('left', false)}>
-              <ArrowBigLeft size={28} />
-            </TouchBtn>
-            <TouchBtn label="Phải" onDown={press('right')} onUp={press('right', false)}>
-              <ArrowBigRight size={28} />
-            </TouchBtn>
-            <TouchBtn label="Nhảy" onDown={press('jump')} onUp={press('jump', false)}>
-              <ArrowBigUp size={28} />
-            </TouchBtn>
-          </div>
-        ) : (
-          <div className="hidden text-ink-soft sm:block">
-            <Kbd>A</Kbd> <Kbd>D</Kbd> di chuyển · <Kbd>W</Kbd> nhảy · giữ <Kbd>Tab</Kbd> xem điểm
-          </div>
-        )}
-        {me && (
-          <div className="flex gap-2 sm:gap-3">
-            <SkillButton k="J" label="Đấm" cd={me.action === 'punch' ? 1 : me.cooldown / ATTACK.punch.cd} onDown={press('punch')} />
-            <SkillButton k="K" label="Đá" cd={me.action === 'kick' ? 1 : me.cooldown / ATTACK.kick.cd} onDown={press('kick')} />
-            <SkillButton k="L" label="Đỡ" active={me.action === 'block'} onDown={press('block')} onUp={press('block', false)} />
-            <SkillButton k="Q" label="Tuyệt chiêu" charge={me.energy / 100} onDown={press('super')} ultimate />
-          </div>
-        )}
-      </div>
-
+  const menus = (
+    <>
       <Modal open={paused && !settingsOpen} onClose={() => setPaused(false)} title={online ? 'Menu' : 'Tạm dừng'}>
         <div className="grid gap-3">
           {online && <p className="text-ink-soft">Trận online vẫn tiếp tục trong lúc bạn mở menu.</p>}
@@ -499,12 +481,135 @@ function Arena({ online, offlineMap }: { online: boolean; offlineMap: MapId }) {
           <Button variant="red" size="lg" onClick={leave}>
             Rời trận
           </Button>
-          <div className="mt-2 border-t-2 border-dashed border-ink/30 pt-3">
-            <ControlsList />
-          </div>
+          {!touchMode && (
+            <div className="mt-2 border-t-2 border-dashed border-ink/30 pt-3">
+              <ControlsList />
+            </div>
+          )}
         </div>
       </Modal>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    </>
+  );
+
+  /* ================= touch layout (phones, tablets) ================= */
+  if (touchMode) {
+    const ctrlH = Math.round(btn * 2.55 + 20);
+    // Put the controls under the arena when that costs at most ~18% of arena size; otherwise float them over it.
+    const fullW = Math.min(box.w, box.h * AR);
+    const below = Math.min(box.w, (box.h - ctrlH) * AR) >= fullW * 0.82;
+    const arenaW = Math.max(0, below ? Math.min(box.w, (box.h - ctrlH) * AR) : Math.min(box.w, box.h * AR));
+    const size = { w: arenaW, h: arenaW / AR };
+    const arenaTop = below ? Math.max(0, (box.h - ctrlH - size.h) / 2) : (box.h - size.h) / 2;
+    const hud = (
+      <CompactHud
+        v={v}
+        me={me}
+        online={online}
+        netStatus={netStatus}
+        ping={ping}
+        feed={feed.current}
+        showFeed={size.w >= 560}
+        onPause={() => setPaused(true)}
+        onBoard={() => setShowBoard((b) => !b)}
+      />
+    );
+    return (
+      <>
+        <div className="game-shell flex flex-col bg-paper" onContextMenu={(e) => e.preventDefault()}>
+          {!landscape && <div className="px-2 pt-2">{hud}</div>}
+          <div ref={stageRef} className="relative min-h-0 flex-1">
+            <div className="absolute left-1/2 -translate-x-1/2" style={{ top: arenaTop }}>
+              {size.w > 0 && renderArena(size, landscape ? <div className="absolute inset-x-0 top-0 z-10 p-1.5">{hud}</div> : undefined)}
+            </div>
+            {below && !landscape && (
+              <p className="absolute inset-x-0 text-center text-sm text-ink-soft" style={{ top: arenaTop + size.h + 6 }}>
+                ↻ Xoay ngang để có sân đấu to hơn
+              </p>
+            )}
+            {me && (
+              <div
+                className={cn('pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between px-3 pb-3', !below && 'opacity-90')}
+                style={{ height: ctrlH }}
+              >
+                <MovePad input={input} s={btn} vibrate={settings.vibrate} className="pointer-events-auto" />
+                <ActionCluster
+                  input={input}
+                  s={btn}
+                  vibrate={settings.vibrate}
+                  punchCd={me.action === 'punch' ? 1 : me.cooldown / ATTACK.punch.cd}
+                  kickCd={me.action === 'kick' ? 1 : me.cooldown / ATTACK.kick.cd}
+                  blocking={me.action === 'block'}
+                  energy={me.energy / 100}
+                  className="pointer-events-auto"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+        {showBoard && (
+          <div className="fixed inset-0 z-40 grid place-items-center bg-ink/30 p-3" onClick={() => setShowBoard(false)}>
+            <Scoreboard fighters={v.fighters} meId={v.meId} mode={v.mode} inline />
+          </div>
+        )}
+        {menus}
+      </>
+    );
+  }
+
+  /* ================= desktop layout (keyboard) ================= */
+  const deskW = Math.max(0, Math.min(box.w, box.h * AR, 1100));
+  return (
+    <div className="flex h-dvh flex-col items-center gap-3 px-2 py-3 select-none">
+      {/* ---------- top HUD ---------- */}
+      <div className="flex w-full max-w-[1100px] flex-wrap items-start justify-between gap-2 sm:flex-nowrap sm:gap-3">
+        <div className="order-2 w-full sm:order-1 sm:w-auto sm:flex-1">{me && <PlayerCard f={me} />}</div>
+        <div className="order-1 flex flex-col items-center gap-1 sm:order-2">
+          <div className="flex items-stretch">
+            {v.mode === 'team' && <TeamScore team="red" value={v.score.red ?? 0} />}
+            <div className="sk z-10 -mx-1 bg-paper-3 px-2.5 py-1 text-center shadow-ink-sm sm:px-4">
+              <div className={cn('font-display text-2xl tabular-nums', v.timeLeft < 30 && 'text-crimson')}>{formatTime(v.timeLeft)}</div>
+            </div>
+            {v.mode === 'team' && <TeamScore team="blue" value={v.score.blue ?? 0} />}
+          </div>
+          <div className="hidden text-sm text-ink-soft sm:block">
+            {MAPS[v.map].name} · {v.mode === 'team' ? `đội đầu tiên đạt ${winScore('team')} K.O thắng` : `ai đạt ${winScore('ffa')} K.O trước thắng`}
+          </div>
+          <WindAlert map={v.map} t={v.t} intro={v.intro} />
+        </div>
+        <div className="order-1 flex items-start justify-end gap-2 sm:order-3 sm:flex-1">
+          <KillFeed items={feed.current} />
+          {online && (
+            <span className={cn('sk hidden items-center gap-1 bg-paper-3 px-2 py-1 text-sm tabular-nums sm:inline-flex', netStatus !== 'open' && 'text-crimson')}>
+              <Wifi size={14} strokeWidth={3} /> {netStatus === 'open' ? `${ping ?? '–'}ms` : 'mất kết nối'}
+            </span>
+          )}
+          <IconButton aria-label="Tạm dừng" onClick={() => setPaused(true)}>
+            <Pause size={18} strokeWidth={3} />
+          </IconButton>
+        </div>
+      </div>
+
+      {/* ---------- arena ---------- */}
+      <div ref={stageRef} className="flex min-h-0 w-full max-w-[1100px] flex-1 items-center justify-center">
+        {deskW > 0 && renderArena({ w: deskW, h: deskW / AR })}
+      </div>
+
+      {/* ---------- bottom HUD ---------- */}
+      <div className="flex w-full max-w-[1100px] flex-wrap items-end justify-center gap-3 sm:justify-between">
+        <div className="hidden text-ink-soft sm:block">
+          <Kbd>A</Kbd> <Kbd>D</Kbd> di chuyển · <Kbd>W</Kbd> nhảy · giữ <Kbd>Tab</Kbd> xem điểm
+        </div>
+        {me && (
+          <div className="flex gap-2 sm:gap-3">
+            <SkillButton k="J" label="Đấm" cd={me.action === 'punch' ? 1 : me.cooldown / ATTACK.punch.cd} onDown={press('punch')} />
+            <SkillButton k="K" label="Đá" cd={me.action === 'kick' ? 1 : me.cooldown / ATTACK.kick.cd} onDown={press('kick')} />
+            <SkillButton k="L" label="Đỡ" active={me.action === 'block'} onDown={press('block')} onUp={press('block', false)} />
+            <SkillButton k="Q" label="Tuyệt chiêu" charge={me.energy / 100} onDown={press('super')} ultimate />
+          </div>
+        )}
+      </div>
+      {menus}
     </div>
   );
 }
@@ -671,25 +776,7 @@ function SkillButton({
   );
 }
 
-function TouchBtn({ children, label, onDown, onUp }: { children: ReactNode; label: string; onDown: () => void; onUp: () => void }) {
-  return (
-    <button
-      aria-label={label}
-      className="sk grid h-14 w-14 touch-none place-items-center bg-paper-3 shadow-ink-sm active:translate-y-0.5 active:bg-marker sm:h-16 sm:w-16"
-      onPointerDown={(e) => {
-        e.preventDefault();
-        onDown();
-      }}
-      onPointerUp={onUp}
-      onPointerLeave={onUp}
-      onPointerCancel={onUp}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Scoreboard({ fighters, meId, mode }: { fighters: Fighter[]; meId: string; mode: 'team' | 'ffa' }) {
+function Scoreboard({ fighters, meId, mode, inline = false }: { fighters: Fighter[]; meId: string; mode: 'team' | 'ffa'; inline?: boolean }) {
   const groups: { key: string; label: string; cls: string; list: Fighter[] }[] =
     mode === 'team'
       ? [
@@ -697,9 +784,8 @@ function Scoreboard({ fighters, meId, mode }: { fighters: Fighter[]; meId: strin
           { key: 'blue', label: 'ĐỘI XANH', cls: 'text-cobalt', list: fighters.filter((f) => f.team === 'blue') },
         ]
       : [{ key: 'all', label: 'NGƯỜI CHƠI', cls: '', list: fighters }];
-  return (
-    <div className="absolute inset-0 grid place-items-center bg-ink/30 p-4">
-      <div className="sk shadow-ink-lg w-full max-w-xl bg-paper-3 p-4">
+  const card = (
+      <div className="sk shadow-ink-lg scroll-sk max-h-[85dvh] w-full max-w-xl overflow-y-auto bg-paper-3 p-3 sm:p-4">
         <h2 className="mb-3 text-center font-display text-xl">Bảng điểm</h2>
         <div className={cn('grid gap-4', groups.length > 1 && 'sm:grid-cols-2')}>
           {groups.map((g) => (
@@ -730,6 +816,104 @@ function Scoreboard({ fighters, meId, mode }: { fighters: Fighter[]; meId: strin
             </table>
           ))}
         </div>
+      </div>
+  );
+  if (inline) return card;
+  return <div className="absolute inset-0 grid place-items-center bg-ink/30 p-4">{card}</div>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Compact HUD for phones                                              */
+/* ------------------------------------------------------------------ */
+function CompactHud({
+  v,
+  me,
+  online,
+  netStatus,
+  ping,
+  feed,
+  showFeed,
+  onPause,
+  onBoard,
+}: {
+  v: MatchView;
+  me: Fighter | undefined;
+  online: boolean;
+  netStatus: string;
+  ping: number | null;
+  feed: Feed[];
+  showFeed: boolean;
+  onPause: () => void;
+  onBoard: () => void;
+}) {
+  const fs = useIsFullscreen();
+  const lead = v.mode === 'ffa' ? [...v.fighters].sort((a, b) => b.kos - a.kos)[0] : undefined;
+  return (
+    <div className="flex items-start justify-between gap-1.5 text-ink">
+      {/* you */}
+      {me ? (
+        <div className="sk min-w-0 bg-paper-3/90 px-2 py-1 shadow-ink-sm" style={{ width: 'clamp(118px, 30vw, 230px)' }}>
+          <div className="flex items-baseline justify-between gap-1 leading-none">
+            <span className="truncate font-display text-[10px]">{me.name}</span>
+            <span className="text-xs tabular-nums">{Math.ceil(me.hp)}</span>
+          </div>
+          <Bar value={me.hp} color={hpColor(me.hp / 100)} height="h-2.5" segments={5} className="mt-0.5" />
+          <Bar value={me.energy} color={me.energy >= 100 ? 'var(--violet)' : 'var(--cobalt)'} height="h-1.5" className="mt-0.5" />
+        </div>
+      ) : (
+        <span />
+      )}
+
+      {/* score + clock (tap for scoreboard) */}
+      <div className="flex shrink-0 flex-col items-center gap-1">
+        <button className="flex items-stretch" onClick={onBoard} aria-label="Xem bảng điểm">
+          {v.mode === 'team' && (
+            <span className="grid min-w-9 place-items-center rounded-l-[10px] border-[2.5px] border-ink bg-crimson px-1.5 font-display text-lg leading-none text-on-accent tabular-nums">
+              {v.score.red ?? 0}
+            </span>
+          )}
+          <span className={cn('sk z-10 -mx-0.5 bg-paper-3 px-2 py-0.5 font-display text-lg tabular-nums', v.timeLeft < 30 && 'text-crimson')}>
+            {formatTime(v.timeLeft)}
+          </span>
+          {v.mode === 'team' && (
+            <span className="grid min-w-9 place-items-center rounded-r-[10px] border-[2.5px] border-ink bg-cobalt px-1.5 font-display text-lg leading-none text-on-accent tabular-nums">
+              {v.score.blue ?? 0}
+            </span>
+          )}
+        </button>
+        {lead && (
+          <span className="sk bg-paper-3/90 px-1.5 text-[11px] leading-tight">
+            Dẫn đầu: <b>{lead.name}</b> ({lead.kos})
+          </span>
+        )}
+        <WindAlert map={v.map} t={v.t} intro={v.intro} />
+      </div>
+
+      {/* actions */}
+      <div className="flex min-w-0 flex-col items-end gap-1" style={{ width: 'clamp(118px, 30vw, 230px)' }}>
+        <div className="flex items-center gap-1.5">
+          {online && (
+            <span className={cn('sk inline-flex items-center gap-0.5 bg-paper-3/90 px-1.5 py-0.5 text-[11px] tabular-nums', netStatus !== 'open' && 'bg-crimson text-on-accent')}>
+              <Wifi size={11} strokeWidth={3} />
+              {netStatus === 'open' ? (ping ?? '–') : '!'}
+            </span>
+          )}
+          {canFullscreen() && (
+            <button className="btn h-8 w-8 bg-paper-3 p-0" onClick={toggleFullscreen} aria-label={fs ? 'Thoát toàn màn hình' : 'Toàn màn hình'}>
+              {fs ? <Minimize size={15} strokeWidth={3} /> : <Maximize size={15} strokeWidth={3} />}
+            </button>
+          )}
+          <button className="btn h-8 w-8 bg-paper-3 p-0" onClick={onPause} aria-label="Menu">
+            <Pause size={15} strokeWidth={3} />
+          </button>
+        </div>
+        {showFeed &&
+          feed.slice(0, 2).map((k) => (
+            <span key={k.id} className="anim-slide-in sk max-w-full truncate bg-paper-3/85 px-1.5 text-[11px] leading-tight">
+              {k.killer && <b className={feedColor(k.kTeam)}>{k.killer} </b>}
+              {k.how === 'fall' ? '🕳️' : k.how === 'lava' ? '🔥' : '👊'} <s className={feedColor(k.vTeam)}>{k.victim}</s>
+            </span>
+          ))}
       </div>
     </div>
   );

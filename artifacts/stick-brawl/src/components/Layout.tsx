@@ -25,7 +25,7 @@ export function Logo({ className }: { className?: string }) {
           </g>
         </svg>
       </span>
-      <span className="font-display text-lg leading-none">
+      <span className="font-display text-lg leading-none max-[399px]:hidden">
         QUE <span className="text-crimson">CHIẾN</span>
       </span>
     </Link>
@@ -39,7 +39,7 @@ export function TopBar() {
   return (
     <>
       <header className="sticky top-0 z-40 border-b-[2.5px] border-ink bg-paper/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5">
+        <div className="safe-x mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
           <Logo />
           <nav className="ml-4 hidden items-center gap-1 md:flex" aria-label="Điều hướng chính">
             {NAV.map((n) => {
@@ -58,7 +58,7 @@ export function TopBar() {
               );
             })}
           </nav>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             <NetBadge />
             <span className="sk hidden items-center gap-1.5 bg-paper-3 px-2.5 py-1 sm:inline-flex">
               <Coins size={16} className="text-marker" strokeWidth={3} />
@@ -67,7 +67,7 @@ export function TopBar() {
             <Link href="/customize" className="sk focus-ring flex items-center gap-1.5 bg-paper-3 py-0.5 pr-3 pl-1">
               <Head color={profile.color} size={28} />
               <span className="hidden max-w-28 truncate sm:inline">{profile.name}</span>
-              <span className="font-display text-[10px] text-ink-soft">Lv{profile.level}</span>
+              <span className="hidden font-display text-[10px] text-ink-soft min-[400px]:inline">Lv{profile.level}</span>
             </Link>
             <IconButton
               aria-label={settings.theme === 'paper' ? 'Chuyển sang bảng đen' : 'Chuyển sang giấy'}
@@ -148,6 +148,37 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
           </div>
         </div>
         <div>
+          <h3 className="mb-2 font-display text-xs uppercase text-ink-soft">Điều khiển cảm ứng</h3>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Nút trên màn hình</span>
+              <Tabs
+                value={settings.touchControls}
+                onChange={(touchControls) => setSettings({ touchControls })}
+                options={[
+                  { value: 'auto', label: 'Tự động' },
+                  { value: 'on', label: 'Bật' },
+                  { value: 'off', label: 'Tắt' },
+                ]}
+              />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Cỡ nút</span>
+              <Tabs
+                value={settings.touchSize}
+                onChange={(touchSize) => setSettings({ touchSize })}
+                options={[
+                  { value: 'sm', label: 'Nhỏ' },
+                  { value: 'md', label: 'Vừa' },
+                  { value: 'lg', label: 'Lớn' },
+                ]}
+              />
+            </div>
+            <Toggle label="Rung khi bấm nút / trúng đòn" checked={settings.vibrate} onChange={(vibrate) => setSettings({ vibrate })} />
+            <p className="text-sm text-ink-soft">Kéo bàn trái để đi, vuốt lên để nhảy. Chạm đồng hồ để xem bảng điểm.</p>
+          </div>
+        </div>
+        <div className="hidden sm:block">
           <h3 className="mb-2 font-display text-xs uppercase text-ink-soft">Phím điều khiển</h3>
           <ControlsList />
         </div>

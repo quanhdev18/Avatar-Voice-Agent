@@ -24,6 +24,11 @@ export type Settings = {
   shake: boolean;
   damageNumbers: boolean;
   quality: 'low' | 'mid' | 'high';
+  /** on-screen controls: auto = only on touch devices */
+  touchControls: 'auto' | 'on' | 'off';
+  touchSize: 'sm' | 'md' | 'lg';
+  /** short vibration on button presses and when you get hit (Android) */
+  vibrate: boolean;
 };
 
 const DEFAULT_PROFILE: Profile = {
@@ -43,6 +48,9 @@ const DEFAULT_SETTINGS: Settings = {
   shake: true,
   damageNumbers: true,
   quality: 'high',
+  touchControls: 'auto',
+  touchSize: 'md',
+  vibrate: true,
 };
 
 type Ctx = {
@@ -62,6 +70,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     writeStorage('qc.settings', settings);
     document.documentElement.dataset.theme = settings.theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', settings.theme === 'chalk' ? '#1f2a2b' : '#f6f1e5');
   }, [settings]);
 
   const setProfile = useCallback((p: Partial<Profile>) => setP((o) => ({ ...o, ...p })), []);
